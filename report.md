@@ -1,0 +1,360 @@
+# IC202P: Landslide type classification from field phone photos
+
+Status: 2026-10-16. Final numbers after two full audits, retrained from clean data (results reproduce
+exactly on re-run; the pipeline also ran end to end on a fresh copy of the data). All scores
+measure agreement with **AI-made labels**; see "Label caveat".
+
+## Summary
+
+- **Task:** a junior engineer takes a phone photo of a slope from downhill. The app (`src/app.py`)
+  first checks that the photo is usable, then gives the landslide type (Hungr et al. 2014
+  classes), its confidence, an on-site checklist and a safety note.
+- **App model:** an ensemble of three frozen-feature linear probes: DINOv2-base, DINOv2-large and
+  SigLIP2-base. It was chosen **on train+val only**, by site-balanced cross-validation plus three
+  distribution-shift tests. When confidence is below 0.6 the app says "uncertain" and shows the
+  top two types.
+- **Untouched test split** (263 usable photos, 152 sites, no site shared with train/val):
+
+  | Model | Accuracy | Macro-F1 [95% CI] |
+  |---|---|---|
+  | App model | 0.806 | 0.784 [0.688, 0.857] |
+  | Fine-tuned ConvNeXt-Tiny | 0.722 | 0.665 |
+  | Qwen2.5-VL zero-shot | 0.555 | 0.327 |
+
+- **End to end** (`tools/system_test.py`, all 1,008 test photos including unusable ones):
+  - **Usable photos:** the app answers 69% confidently, and those answers are right **86%** of
+    the time (88% on phone-degraded copies). 14% are marked uncertain, and 17% are wrongly
+    rejected as bad photos.
+  - **All photos:** 30% of confident answers were on photos that should have been rejected.
+    Precision over all photos is therefore **0.60**. The test split has about 3 unusable photos
+    per usable one; in the field, where most uploads are slope photos, precision will be closer
+    to the usable-photo figure.
+- **Still to do by the team:**
+  1. A person re-labels the test split blind; all labels are currently AI-made.
+  2. Test the app on 30–50 local phone photos.
+
+## 1. Problem and classes
+
+| Class | Hungr 2014 types (as in `src/common.py`) |
+|---|---|
+| `fall_topple` | rock/ice fall, boulder/debris fall, rock block topple, flexural topple |
+| `rotational_slide` | rock/clay/silt rotational slide (slump) |
+| `translational_slide` | rock planar/wedge slide, gravel/sand/debris slide |
+| `debris_flow` | debris flow, debris flood, debris avalanche |
+| `earth_mud_flow` | earthflow, mud flow |
+| `no_landslide` | stable slope, cut or cliff |
+| `reject` (photo check) | aerial, satellite, map, art, archive scan, close-up, slope not visible |
+
+## 2. Data
+
+No public ground-level landslide-type dataset exists; the benchmarks (LandslideBench, Bijie,
+Landslide4Sense…) use overhead imagery.
+
+**Sources (4,954 photos):**
+- **Wikimedia Commons, 3,684 photos:**
+  - 2,426 from title searches, including about 1,130 Geograph field photos;
+  - 879 from South-Asian landslide/road categories;
+  - 379 from the first Rockfalls / Rock slides / Blockslides category walks.
+- **Openverse, 1,270 photos:** 1,267 from Flickr, 3 from other hosts.
+- **Phone photos:** 636 are phone photos according to their EXIF data, which exists for Commons
+  photos only.
+
+**Usable photos:** 1,325, of which 322 are from South Asia and 237 are phone photos. The rest were
+rejected as unusable. Reject rates by source: title searches 62%, category trees 82%,
+Openverse 86%.
+
+| | fall_topple | rotational | translational | debris_flow | earth_mud | no_landslide | reject |
+|---|---|---|---|---|---|---|---|
+| train | 194 | 67 | 99 | 180 | 39 | 329 | 2,406 |
+| val | 25 | 6 | 22 | 13 | 4 | 84 | 478 |
+| test | 58 | 11 | 32 | 29 | 8 | 125 | 745 |
+
+- **Split by site, fixed before labeling.** `tools/link_sites.py` merges photos of the same
+  place or event into one site, because the same place can sit under different Commons
+  categories (e.g. Black Ven, the Maui debris flow, Attabad Lake). Photos are linked by:
+  - specific title stems;
+  - photo series;
+  - DINOv2 similarity ≥ 0.90.
+  This gives 2,062 sites. No site spans two splits, and no usable test photo has a
+  near-identical train/val photo (checked by `tools/check_integrity.py`).
+- **One large event:** 132 photos of a single debris flow (Nedumpoil, Kerala 2022) form one
+  site, all in train. The robustness metrics are site-balanced so it cannot dominate.
+- **Licences:** stored per photo in `data/metadata.csv`, with credits in `data/credits.csv`.
+  - 753 photos are NC (non-commercial) and 411 are ND (no derivatives). This is fine for a
+    course project; see `results/licences.md` for what is allowed.
+  - Credit every photo you show.
+
+### Label caveat
+
+- **Who labeled:** every label was made by an AI annotator (Claude, reviewer `claude_ai`)
+  following `labeling_guide.md` and `tools/ai_labeling_prompt.md`. The full audit trail is in
+  `data/labels/ai_annotation/`.
+- **Spot checks:** two manual checks (48 + 24 photos; samples in `data/labels/ai_annotation/qa*`)
+  judged about 80–90% of labels consistent with the guide (a judgement, not a recorded score; the
+  2 clear errors found were corrected, `qa2/fix.txt`).
+- **Noise detection on train/val only** (`tools/find_label_issues.py`):
+  - 299 suspicious labels were re-labeled blind; the second look agreed with the first on 63%.
+  - After the site merge, 9 of those photos moved into test. They got their first-look labels
+    back, so the test split carries no noise correction.
+- **The "unsure → reject" rule:** when the annotator was unsure between two types, the photo
+  was rejected. So the hardest landslide photos are not in the scored test set. Section 4.4
+  measures the app on them separately.
+- **What this means for the scores:** they measure agreement with these labels. Before quoting
+  them as final, a teammate or faculty member must re-label the test split blind:
+
+  ```
+  .venv\Scripts\python src/review.py --reviewer <name> --split test --relabel-others
+  ```
+
+  Human labels override AI labels automatically, and `src/eval.py` then reports Cohen's kappa
+  between people and the AI labels.
+
+## 3. Models
+
+| Model | What it is |
+|---|---|
+| Qwen2.5-VL-7B zero-shot | VLM baseline, 4-bit; class read from next-token probabilities of option letters |
+| `probe_base` / `probe_large` / `probe_siglip` | frozen DINOv2-base / DINOv2-large / SigLIP2-base features + logistic regression; photo-check head + type head |
+| `cnn` | ConvNeXt-Tiny fine-tuned end to end (25 epochs, best val epoch 14) |
+| **selected (app)** | **average of the three probes' type probabilities; photo check = average of their check heads** |
+
+**Shared training details:**
+- **Phone-style copies.** Probes train on each photo plus 3 phone-style copies
+  (`src/phone_aug.py`: framing, tilt, exposure, blur, noise, JPEG recompression). The CNN uses the
+  same augmentation on the fly.
+- **Choosing C.** The regularisation strength is chosen by site-grouped, class-stratified CV on
+  train+val. The same rule runs in `src/probe.py` and `tools/robustness_eval.py`, so the
+  evaluated models are the ones deployed.
+- **No test leakage.** Each model stores the ids of the photos it was trained on. `eval.py`,
+  `system_test.py` and `check_integrity.py` refuse any model that saw a test photo.
+
+**How the app's model was chosen** (`tools/robustness_eval.py`, train+val only; the rule is
+recorded in `models/selected.json` with a hash of the selection code):
+1. Compare all seven systems: the three probes and every ensemble of them.
+2. Score each by the **mean site-balanced macro-F1** of four tests:
+   - site-grouped, stratified 5-fold CV;
+   - Commons → Openverse;
+   - outside → South Asia;
+   - known non-phone cameras → phone photos.
+   Test sites never appear in training.
+3. The highest score wins; ties at 3 decimals go to the system with fewer members.
+4. The "uncertain" threshold is the first confidence level that reaches 85% CV accuracy at
+   ≥ 50% coverage. That is 0.6.
+
+## 4. Results
+
+### 4.1 Robustness (train+val, cross-validated; `results/robustness.md`)
+
+| System | Robust score | CV macro-F1 (site-bal.) | →Openverse | →South Asia F1 (acc) | →phone camera | ECE | Δ CV F1 vs selected (P ≤ 0) |
+|---|---|---|---|---|---|---|---|
+| **base+large+siglip** | **0.676** | 0.714 | 0.743 | 0.578 (0.741) | 0.669 | 0.040 | – |
+| large+siglip | 0.670 | 0.701 | 0.689 | 0.617 (0.741) | 0.675 | 0.036 | +0.013 (0.08) |
+| base+large | 0.665 | 0.712 | 0.695 | 0.587 (0.734) | 0.668 | 0.029 | +0.004 (0.38) |
+| base+siglip | 0.654 | 0.704 | 0.703 | 0.548 (0.737) | 0.662 | 0.063 | +0.007 (0.32) |
+| large | 0.651 | 0.684 | 0.661 | 0.587 (0.712) | 0.669 | 0.091 | +0.025 (0.04) |
+| base | 0.639 | 0.680 | 0.719 | 0.558 (0.723) | 0.598 | 0.040 | +0.032 (0.00) |
+| siglip | 0.583 | 0.637 | 0.549 | 0.536 (0.690) | 0.611 | 0.028 | +0.065 (0.00) |
+
+- **Δ column:** a paired site bootstrap of CV macro-F1 (selected minus the other system). The
+  selected ensemble is clearly better than every single backbone. Against the two-model
+  ensembles the gaps are small (P(≤ 0) between 0.08 and 0.38).
+- **Selective prediction** (CV, type head only, before the photo check): answering only at
+  confidence ≥ 0.6 covers 73% of photos at 88.1% accuracy. At ≥ 0.8 it covers 46% at 94.4%.
+
+### 4.2 Untouched test split (263 usable photos, 152 sites; `results/summary.md`)
+
+| Model | Accuracy | Macro-F1 [95% CI, site bootstrap] | Phone-degraded acc / F1 |
+|---|---|---|---|
+| Qwen2.5-VL-7B zero-shot | 0.555 | 0.327 [0.268, 0.399] | – |
+| ConvNeXt-Tiny fine-tuned | 0.722 | 0.665 [0.548, 0.745] | 0.684 / 0.582 |
+| probe_siglip | 0.726 | 0.642 [0.536, 0.725] | 0.722 / 0.639 |
+| probe_base | 0.745 | 0.649 [0.537, 0.738] | 0.741 / 0.661 |
+| probe_large | 0.776 | 0.736 [0.643, 0.810] | 0.787 / 0.745 |
+| **selected (app)** | **0.806** | **0.784 [0.688, 0.857]** | 0.768 / 0.697 |
+
+The test split agrees with the train+val choice: the selected ensemble is the best system here
+too.
+
+**Subgroups for the selected model** (macro-F1 over the classes present in each subgroup):
+
+| Subgroup | n | Accuracy | Macro-F1 |
+|---|---|---|---|
+| Uphill/level views (deployment viewpoint) | 254 | 0.815 | 0.800 |
+| South Asia | 48 | 0.854 | 0.807 |
+| Real phone photos (EXIF) | 20 | 0.600 | 0.526 |
+
+The phone subgroup has n = 20, so that number is very uncertain.
+
+**Per class** (test, selected):
+
+| Class | Recall | Precision |
+|---|---|---|
+| fall_topple | 0.67 | 0.66 |
+| rotational_slide (n = 11) | 0.91 | 0.83 |
+| translational_slide | 0.53 | 0.65 |
+| debris_flow | 0.97 | 0.93 |
+| earth_mud_flow (n = 8) | 0.75 | 0.75 |
+| no_landslide | 0.90 | 0.88 |
+
+### 4.3 End-to-end system test (`results/system_test.md`)
+
+The real app pipeline (photo check, then type, then threshold) run on all 1,008 test photos.
+
+| | Original | Phone-degraded |
+|---|---|---|
+| Photo check accuracy (usable vs reject) | 0.836 | 0.832 |
+| Usable photos accepted / unusable rejected | 0.833 / 0.838 | 0.825 / 0.835 |
+| Confident answers given (all photos) | 258 | 254 |
+| … of which on photos that should have been rejected | 29.5% | 31.5% |
+| **End-to-end precision, all photos** | **0.605** | **0.602** |
+| Usable photos answered confidently / marked uncertain | 0.692 / 0.141 | 0.662 / 0.163 |
+| **Type accuracy when answered, usable photos** | **0.857** | **0.879** |
+
+- **Calibration transfers to test:** CV predicted 88.1% accuracy at ≥ 0.6 before the photo
+  check, and test gives 85.7%.
+- **The photo check is the weakest link.** It wrongly rejects about 17% of usable photos and
+  lets through about 16% of unusable ones.
+
+### 4.4 Hard, ambiguous photos (`results/hard_cases.md`)
+
+A second AI pass over the 745 rejected test photos found **58 usable photos of real but
+ambiguous landslides** (plus 6 clearly usable photos that had been wrongly rejected). On the 58
+hard photos the app:
+- rejects 29% as bad photos;
+- says "uncertain" on 34%; in 65% of those, the best guess is among its top two;
+- answers confidently on 36%, and only 57% of those confident answers match the best guess.
+
+So on genuinely ambiguous photos the app hesitates or refuses about two-thirds of the time,
+which is the desired behaviour. When it does answer them confidently, it is right much less
+often than on clear photos (57% vs 86%).
+
+### 4.5 Findings
+
+1. **Frozen foundation-model features with linear heads beat both alternatives.** Single probes
+   score 0.64–0.74 test macro-F1 and the ensemble 0.78. The fine-tuned CNN reaches 0.67, because
+   about 900 training photos are too few for full fine-tuning. The zero-shot VLM reaches 0.33; it
+   rarely recognises debris flows and earth/mud flows. This matches LandslideBench (2026,
+   overhead imagery): Qwen3-VL-8B zero-shot 19% vs fine-tuned ConvNeXt 79%.
+2. **The three-backbone ensemble has the best combined robustness score** (and is best on →Openverse
+   and on test). It does not win every shift test: on →South Asia, large+siglip (0.617), base+large
+   and DINOv2-large alone (both 0.587) beat its 0.578, and on →phone camera large+siglip is higher
+   (0.675 vs 0.669). Not every ensemble beats every single model either: base+siglip is weaker on
+   →South Asia than DINOv2-large alone.
+3. **Region shift is the main risk.** Trained without any South-Asian photo and tested on them,
+   site-balanced macro-F1 drops from 0.71 (CV) to 0.58; accuracy from 0.77 to 0.74. With South-Asian
+   photos in training (the app), the 48 South-Asian test photos score 0.854 accuracy / 0.807 macro-F1,
+   so the collected South-Asian data matters.
+4. **Phone-style degradation costs some macro-F1** (test 0.784 → 0.697), and its cost in the app
+   shows up as **coverage**: usable photos answered confidently fall from 0.692 to 0.662 and
+   "uncertain" rises from 0.141 to 0.163, while accuracy on confident answers stays high
+   (0.857 → 0.879). The confidence threshold absorbs the loss.
+   - **Caveat:** the degradation recipe is the one used in training, so this test is
+     favourable.
+   - Real phone photos (n = 20) score lower (0.60 accuracy).
+5. **The weakest areas:**
+   - **`translational_slide`:** often predicted as rock fall (13 test photos); and 40 true debris
+     flows were predicted as translational slides in CV.
+   - **`earth_mud_flow`:** 51 photos in total, 43 in train+val; CV recall 0.40.
+   - **`no_landslide` ↔ `fall_topple`:** a stable cliff with old talus vs a rock fall.
+
+## 5. Field app
+
+```
+.venv\Scripts\python src/app.py [--token SECRET] [--no-save]
+```
+
+**To open it:** use the printed address on a phone on the same Wi-Fi or hotspot. If it doesn't
+load, allow Python through Windows Firewall for private networks.
+
+**Flow:**
+1. "Take photo" opens the camera. The browser fixes the rotation and shrinks the photo before
+   upload.
+2. The **photo check** runs (reject if below 50% usable).
+3. The **type** is shown with all probabilities.
+4. Below 0.6 confidence the app says **uncertain** and shows the top two. If both are flows (or
+   both slides) and together reach 0.6, it gives the family.
+5. **Check on site** and **Safety** notes for that type.
+
+**Hardening:**
+- uploads are capped at 25 MB and 40 megapixels;
+- requests time out;
+- one photo is processed at a time;
+- `--token` optionally restricts access;
+- uploads are saved to `data/app_uploads/` (capped by `--max-saved`) so they can be labeled
+  later.
+
+**Status:** a laptop prototype, not a public website (README "Status").
+
+## 6. Audit (2026-10-16): what a full scan found and fixed
+
+Three independent reviews covered the code, the methodology and the documents, followed by a
+data audit. Everything was fixed and then the whole pipeline was re-run.
+
+**Leakage**
+- **Site grouping by first Commons category leaked:** about 40–50 usable test photos had a twin
+  site in train/val (estimated before the fix). Sites are now merged by title, photo series and visual similarity
+  (`tools/link_sites.py`); 230 photos changed split. All models were retrained and all results
+  regenerated.
+- **Noise correction reached test:** after the merge, 9 noise-corrected labels were in test.
+  Their first-look labels were restored.
+
+**Selection and calibration**
+- The model was chosen on cross-validation that included the test split. Selection is now
+  train+val only.
+- The deployed probes used a different C rule than the evaluated ones. There is now one shared
+  rule.
+- The CV folds were unstratified. They are now stratified and shuffled.
+- Shift tests were dominated by one site. Metrics are now site-balanced.
+
+**Metrics and labels**
+- The South-Asia tag read search-query text, which tagged UK photos as South Asian. Fixed.
+- Subgroup macro-F1 counted absent classes as 0. Fixed.
+- The headline accuracy ignored confident answers on unusable photos. End-to-end precision is
+  now reported.
+- The hardest photos were missing from scoring. They are now measured separately (section 4.4).
+
+**Reproducibility**
+- `pred_selected` is now written by `eval.py`.
+- The obsolete second selector (`tools/select_model.py`) was removed.
+- The CNN replaces the deployed model only when a run finishes.
+- Feature caches and CSVs are written atomically, and the file lock is safe.
+
+**Robustness**
+- **review.py:** the default queue was empty; the tie view disagreed with the ground-truth vote;
+  human re-labels lost the viewpoint; concurrent saves could clash and fast keypresses could skip
+  photos; there was no CSRF guard.
+- **app.py:** no pixel cap or timeouts; saves happened outside the lock.
+- **probe.py:** crashed on a dataset without rejects.
+- **split.py:** could rewrite existing splits.
+- **Collector:** hint rules were too loose ("Netherlands" matched "net"), `--dry-run` wrote files,
+  and EXIF orientation was ignored.
+- **All scripts:** non-ASCII titles could crash runs on a Windows console.
+
+**Second audit (final):** --help ran 5 scripts for real (now parsers everywhere); staleness checks
+  used file times (now a content fingerprint of split+labels stored in every model); `link_sites.py` would
+  have merged all future photos into one site; Openverse query text still tagged South Asia; Pillow's
+  pixel cap was really 80 MP; non-deterministic viewpoint ties; stale ensemble predictions could pass; and
+  several crash paths (empty thresholds, missing checkpoints, non-object JSON, model errors in the app).
+  All fixed; probes, selection and all evaluations re-run (identical test results).
+
+**Documentation and licences**
+- Licences and attribution are now documented (`tools/credits.py`).
+- README, labeling guide and docstrings were brought in line with the code. design.md is marked
+  as the original plan.
+
+## 7. Limitations and next steps
+
+1. **Human labels for the test split:** see "Label caveat" in section 2. This is the largest open
+   item.
+2. **Real local phone photos:** only 20 phone photos are in the test split. Taking 30–50 local
+   photos (`src/import_local.py` + `review.py`) is the truest test of the app.
+3. **The photo check:** about 17% of good photos are refused. More rejected and accepted
+   examples taken by engineers would help.
+4. **The weakest classes:** `translational_slide` and `earth_mud_flow` need more data.
+5. **Decision support only:** the app sees one photo, so cracks or seepage outside the frame are
+   invisible to it. A geologist must confirm.
+
+## Reproduce
+
+Follow the README workflow table, steps 1–8. Each script's top docstring documents its options.
+After any interruption, run `tools/check_integrity.py`; it must print ALL OK.

@@ -1,0 +1,82 @@
+Extracted from Hungr, Leroueil & Picarelli (2014), Landslides 11:167-194
+
+Table 1 A summary of Varnes ’ 1978 classification system (based on Varnes 1978, Fig. 2.1)
+Movement type Rock Debris Earth
+Fall 1. Rock fall 2. Debris fall 3. Earth fall
+Topple 4. Rock topple 5. Debris topple 6. Earth topple
+Rotational sliding 7. Rock slump 8. Debris slump 9. Earth slump
+Translational sliding 10. Block slide 11. Debris slide 12. Earth slide
+Lateral spreading 13. Rock spread − 14. Earth spread
+Flow 15. Rock creep 16. Talus flow 21. Dry sand flow
+17. Debris flow 22. Wet sand flow
+18. Debris avalanche 23. Quick clay flow
+19. Solifluction 24. Earth flow
+20. Soil creep 25. Rapid earth flow
+26. Loess flow
+Complex 27. Rock slide-debris avalanche 28. Cambering, valley bulging 29. Earth slump-earth flow
+
+
+Table 3 Landslide-forming material types
+Material name Character
+descriptors (if
+important)
+Simplified field description for the purposes of
+classification
+Corresponding
+unified soil classes
+Laboratory
+indices (if
+available)
+Rock Strong Strong —broken with a hammer UCS>25 MPa
+Weak Weak —peeled with a knife 2<UCS<25 MPa
+Clay Stiff Plastic, can be molded into standard thread when
+moist, has dry strength
+GC, SC, CL, MH, CH,
+OL, and OH
+Ip> 0.05
+Soft
+Sensitive
+Mud Liquid Plastic, unsorted remolded, and close to Liquid
+Limit
+CL, CH, and CM Ip>0.05 and
+Il>0.5
+Silt, sand, gravel,
+and boulders
+Dry Nonplastic (or very low plasticity), granular, sorted.
+Silt particles cannot be seen by eye
+ML Ip<0.05
+Saturated SW, SP, and SM
+Partly saturated GW, GP, and GM
+Debris Dry Low plasticity, unsorted and mixed SW-GW Ip<0.05
+Saturated SM-GM
+Partly saturated CL, CH, and CM
+Peat Organic
+Ice Glacier
+
+
+Table 5 Summary of the proposed new version of the Varnes classification system. The words in italics are placeholders (use only one)
+Type of movement Rock Soil
+Fall 1. Rock/ice falla 2. Boulder/debris/silt falla
+Topple 3. Rock block topple a 5. Gravel/sand/silt topplea
+4. Rock flexural topple
+Slide 6. Rock rotational slide 11. Clay/silt rotational slide
+7. Rock planar slide a 12. Clay/silt planar slide
+8. Rock wedge slide a 13. Gravel/sand/debris slidea
+9. Rock compound slide 14. Clay/silt compound slide
+10. Rock irregular slide a
+Spread 15. Rock slope spread 16. Sand/silt liquefaction spread a
+17. Sensitive clay spread a
+Flow 18. Rock/ice avalanchea 19. Sand/silt/debris dry flow
+20. Sand/silt/debris flowslidea
+21. Sensitive clay flowslide a
+22. Debris flow a
+23. Mud flow a
+24. Debris flood
+25. Debris avalanche a
+26. Earthflow
+27. Peat flow
+Slope deformation 28. Mountain slope deformation 30. Soil slope deformation
+29. Rock slope deformation 31. Soil creep
+32. Solifluction
+For formal definitions of the landslide types, see text of the paper.
+a Movement
