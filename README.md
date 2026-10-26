@@ -105,6 +105,44 @@ for this course project, but credit every photo you show ("Title" by Author, Lic
 publish modified versions of ND photos, and remove NC photos before any commercial use.
 See `results/licences.md`.
 
+## Dimensions (after classification)
+
+`src/dimension.py` (deep-learning models and orchestration) and `src/dim_stats.py` (pixel statistics)
+measure the landslide once it is classified. The app does this automatically; skip it with
+`--no-dims`. From the command line:
+`python src/dimension.py photo.jpg [--label debris_flow] [--distance 40] [--save-overlay] [--json]`.
+The architecture table and the assumed values are in report.md, section 6b. In short:
+
+- **Outline:** CLIPSeg, the self-trained head and the jittered SAM soft mask are fused, damped by a
+  vegetation/sky prior, and cut by a graph cut with colour and depth edges.
+- **Depth:** Depth Anything V2 and Depth Pro, each with test-time augmentation, fused per
+  pixel by inverse variance, then guided-filtered. ZoeDepth was tested and dropped; the evidence
+  is in report.md, section 6b.
+- **Scale**, best first: your typed distance; OWLv2 known-height objects (weighted median); the
+  field calibration; the ensemble, corrected by the known-object prior
+  (`models/dimension_object_prior.json`).
+- **Measurement:** RANSAC plane geometry and per-class measures. Volume comes from published laws
+  combined with a reconstructed pre-failure surface. Grains are SAM instances at two zooms, fitted
+  with a truncated log-normal.
+- **Ranges:** Monte Carlo P5-P95 ranges and size-class probabilities.
+- **Class doubt:** when the classifier is unsure, the landslide is also measured as the runner-up
+  class.
+
+Training and calibration (both leakage-free):
+- `python tools/train_outline_head.py` self-trains the outline head on the train split and selects
+  it on val. Test is never used.
+- `python tools/calibrate_dimensions.py` fits the scale from field measurements in
+  `data/field/measurements.csv`, validated leave-one-site-out.
+
+`python src/dimension.py a.jpg b.jpg c.jpg --site` fuses several photos of ONE landslide: the
+median of the photos, with the between-photo spread added to the range. Different photos of one
+site typically differ by about 1.5-2x, so use this for important sites.
+
+`python tools/dimension_eval.py [--tag v4] [--budget-min 3]` is resumable: on low-RAM machines,
+run it in chunks, and exit code 3 means rerun to continue. It reports availability, stability under phone-like edits,
+the depth checks, interval widths and same-site consistency. It also writes the known-object
+scale evidence.
+
 ## Why these choices (for the report)
 - **Zero-shot VLM is a baseline, not the main model.** LandslideBench (2026, overhead imagery)
   measured Qwen3-VL-8B zero-shot at 19% vs 79% for a fine-tuned ConvNeXt; on our ground photos

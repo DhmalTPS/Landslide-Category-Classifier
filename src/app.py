@@ -16,6 +16,7 @@ Usage:  python src/app.py [--port 8000] [--model auto|probe_base|probe_large|pro
 """
 import common  # noqa: F401  (sets HF cache dir; must precede transformers/timm)
 import argparse
+import base64
 import io
 import json
 import socket
@@ -33,6 +34,7 @@ from PIL import Image
 from logo import LOGO_SVG, png as logo_png
 from ui import build_page
 from predict import Predictor, load_image
+from dimension import Dimensioner, draw_overlay, focal_35mm, measure_ranked
 
 ICONS = {"/favicon.svg": (LOGO_SVG.encode(), "image/svg+xml"),
          "/favicon.ico": (logo_png(48), "image/png"),
@@ -132,7 +134,7 @@ class VLM:
                 "description": self.V.explain(self.model, self.proc, img)}
 
 
-def make_handler(pred, vlm, save, max_saved=2000, token=None):
+def make_handler(pred, vlm, save, max_saved=2000, token=None, dim=None):
     lock = threading.Lock()       # one photo at a time: decode, predict, save (bounded memory)
     names = {c: INFO[c]["title"] for c in CLASSES}
     page = build_page(LOGO_SVG, INFO, names, PHOTO_TIPS, pred.confident_min)
@@ -191,6 +193,26 @@ def make_handler(pred, vlm, save, max_saved=2000, token=None):
                     r = pred([img])[0]
                     if vlm:
                         r["vlm"] = vlm(img)
+                    if dim and r["status"] != "bad_photo":
+                        try:
+                            dist = float(parse_qs(urlparse(self.path).query).get("d", [""])[0] or 0) or None
+                        except ValueError:
+                            dist = None
+                        if dist and not 0.5 <= dist <= 5000:
+                            dist = None
+                        try:
+                            grav = [float(v) for v in parse_qs(urlparse(self.path).query).get("g", [""])[0].split(",")]
+                            grav = grav if len(grav) == 3 and all(abs(v) <= 1.01 for v in grav) else None
+                        except ValueError:
+                            grav = None
+                        d = measure_ranked(dim, img, r, f35=focal_35mm(raw), ref_distance_m=dist, gravity=grav)
+                        if "overlay" in d:
+                            buf = io.BytesIO()
+                            ov = draw_overlay(img, d.pop("overlay"))
+                            ov.thumbnail((720, 720))
+                            ov.save(buf, "JPEG", quality=80)
+                            d["overlay"] = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+                        r["dimensions"] = d
                 except Exception as e:   # e.g. out of GPU memory: answer the phone instead of hanging
                     print(f"prediction failed: {e!r}")
                     return self._send(500, json.dumps({"error": "the model failed on this photo; try again"}),
@@ -229,6 +251,7 @@ def main():
                     help="auto = models/selected.json (chosen on train+val by tools/robustness_eval.py); "
                          "or probe_base, probe_large, probe_siglip, cnn")
     ap.add_argument("--vlm", action="store_true", help="add a Qwen2.5-VL second opinion (CUDA GPU, ~6 GB)")
+    ap.add_argument("--no-dims", action="store_true", help="skip the dimension estimate (saves ~3 GB of GPU memory)")
     ap.add_argument("--no-save", action="store_true", help="do not keep uploaded photos")
     ap.add_argument("--max-saved", type=int, default=2000, help="stop saving uploads after this many")
     ap.add_argument("--token", help="require ?t=TOKEN in the address (recommended on shared networks)")
@@ -236,8 +259,9 @@ def main():
 
     pred = Predictor(args.model)
     vlm = VLM() if args.vlm else None
+    dim = None if args.no_dims else Dimensioner()
     server = ThreadingHTTPServer((args.host, args.port),
-                                 make_handler(pred, vlm, not args.no_save, args.max_saved, args.token))
+                                 make_handler(pred, vlm, not args.no_save, args.max_saved, args.token, dim))
     q = f"/?t={args.token}" if args.token else ""
     print(f"Landslide app ready (model: {pred.model_name}, confident >= {pred.confident_min}).\n"
           f"  on this laptop: http://localhost:{args.port}{q}\n"

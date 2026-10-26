@@ -342,6 +342,94 @@ data audit. Everything was fixed and then the whole pipeline was re-run.
 - README, labeling guide and docstrings were brought in line with the code. design.md is marked
   as the original plan.
 
+## 6b. Dimensions after classification (added 2026-10-26, upgraded the same day)
+
+After the type is predicted, `src/dimension.py` (deep-learning models and orchestration) and
+`src/dim_stats.py` (pixel statistics and robust estimators) estimate the size of the landslide. The
+approach is hybrid throughout: networks propose, statistics fuse, check and measure. No single
+network sets a number on its own.
+
+| Stage | Deep learning | Statistics / geometry |
+|---|---|---|
+| Outline | CLIPSeg (class prompts); self-trained DINOv2 head; SAM with 6 jittered prompt sets | Excess-Green + sky prior; graph cut (max-flow) with colour and depth-edge terms; lambda by stability selection |
+| Depth | Depth Anything V2 and Depth Pro, each with test-time augmentation (TTA); ZoeDepth was tested and dropped (see below) | Shape from both models, scale = consensus of the models; per-pixel inverse-variance fusion; guided filter |
+| Scale | OWLv2 known-height objects (person, car, ..., trees weak) | Weighted median, 3-MAD outlier removal; known-object prior (x1.53, n=4); field calibration (leave-one-site-out) |
+| Geometry | - | RANSAC plane; percentile extents; view-angle-corrected area; contour perimeter |
+| Volume | - | Area-volume laws combined with a thin-plate-spline pre-failure surface (CV-chosen smoothing), weighted by inverse variance |
+| Grains | SAM instances at zoom 1 and zoom 2 | Convex-hull b-axis; Kellerhals-Bray grid-by-number; truncated log-normal MLE; bootstrap CI; zoom agreement |
+| Uncertainty | - | Monte Carlo over outline variant x scale x volume priors: P5-P95 and size-class probabilities |
+| Checks | - | TTA stability; model agreement; haze rho; texture-frequency slope; plane inliers; object-vs-depth; Corominas H/L |
+| Class doubt | Classifier's top two classes | Measured under both; probability-weighted geometric mean |
+| Several photos of one site | - | `--site`: median across photos; range combined with the between-photo spread (`fuse_site`) |
+
+**Synthetic recovery tests (known answers, CPU):**
+- truncated log-normal D50: 0.095 against a true 0.100;
+- graph cut IoU 1.00, against 0.55 for a plain threshold on the same noisy probabilities;
+- pre-failure pit volume: 18.4 against about 15.7 m³;
+- texture-depth slope: 0.98 against an expected 1 (for textures above about 0.06 cycles/px; lower
+  frequencies are biased low, so the check only flags slopes outside 0.3-2.0).
+
+**Evaluation history (40 photos x 9 versions, plus 12 multi-photo sites; `results/dimension_eval_v1..v4.md`).**
+Stability is the median |log change| under each photo edit (0.10 is about a 10 % change); lower is better.
+
+| | v1 (CLIPSeg+SAM) | v2 (3 depth models, median scale) | v3 (ZoeDepth dropped) | v4 (final) |
+|---|---|---|---|---|
+| Area under blur / JPEG / noise / tilt | 0.37 / 0.48 / 0.24 / 0.27 | 0.49 / 0.40 / 0.27 / 0.31 | 0.32 / 0.42 / 0.25 / 0.23 | 0.31 / 0.42 / 0.25 / 0.25 |
+| Area under mirror / darker / downscale | 0.20 / 0.15 / 0.25 | 0.05 / 0.09 / 0.15 | 0.06 / 0.09 / 0.17 | 0.06 / 0.09 / 0.16 |
+| Volume under blur / noise / downscale / tilt | 0.44 / 0.30 / 0.29 / 0.32 | 0.60 / 0.74 / 0.31 / 0.36 | 0.38 / 0.46 / 0.29 / 0.33 | 0.35 / 0.44 / 0.22 / 0.28 |
+| Trust high / medium / low | 12 / 75 / 12 % | 0 / 72 / 28 % | 30 / 42 / 28 % | 30 / 42 / 28 % |
+| Camera distance 2-300 m | 100 % | 80 % | 100 % | 100 % |
+| Same-site log-sd: length / width / area | - | 0.50 / 0.32 / 0.77 | 0.40 / 0.52 / 0.86 | 0.40 / 0.45 / 0.80 |
+| 90 % interval width, log(P95/P5), length | - | - | 1.3-3.1 | 1.37-1.44 |
+| Seconds per photo (RTX 4060) | ~20 | 30 | 23 | 25 |
+
+**Decisions, each backed by evidence:**
+- **ZoeDepth dropped (v3).** It read 4-6x closer than the other two models (median largest-pair ratio 6.25 on 40 photos), was contradicted by the known-size objects, and the empirical "depth error" it produced (log-sd 1.9) was bias, not noise.
+- **Known-object scale prior x1.53 (v4).** All 9 photos where OWLv2 found an object of known height said the ensemble reads too close (factors 1.04-4.36; p about 1/512 if unbiased). Only the 4 tight-height objects set the factor (person x1.27 and x1.85, motorcycle x1.92, car x1.04); its predictive log-sd is 0.345. It is applied only when a photo has no typed distance, no object of its own and no field calibration (`models/dimension_object_prior.json`). Caveat: it is estimated on the same evaluation photos, but it is one global number and does not affect the stability metrics, which do not depend on the overall scale.
+- **On/off switches replaced by smooth weights (v3-v4).** These are the pre-failure surface weight (relief-to-noise ratio) and the grain-size floor on thickness, which was removed. Volume stability improved, e.g. blur 0.60 -> 0.35 and downscale 0.31 -> 0.22.
+- **Remaining weak spots.** Heavy JPEG and noise still move the area by 25-42 %; volume under noise (0.44) is worse than v1 (0.30), because v1 had no surface-based volume. Same-site spread (width about 1.6x, area about 2.2x) is partly real: each photo sees a different part from a different distance. **Report ranges, and fuse several photos of an important site (`--site`).**
+
+**Assumed values (literature-based, not fitted).** These cannot be fitted without measured sizes;
+`tools/calibrate_dimensions.py` replaces the scale-related ones once field data exist.
+
+| Value | Used | Source |
+|---|---|---|
+| Single-model metric depth error | log-sd 0.25, plus the per-photo disagreement between the models | zero-shot AbsRel of 0.2-0.3 outdoors |
+| Focal-length error | EXIF 0.02, Depth Pro 0.15, default 0.25 (log-sd) | - |
+| Object heights | person 1.70, car 1.50, motorbike 1.10, truck 3.0, bus 3.2, door 2.1, pole 9, tree 15 (log-sd 0.06-0.5) | typical dimensions |
+| Guzzetti law | V = 0.074 A^1.45, log-sd 0.6 | Guzzetti et al. 2009 |
+| Deposit thickness | debris flow 1 m (0.3-3), earthflow 2 m (0.5-5), talus 0.5 m (0.2-2) | typical ranges |
+| Mobility | log10(H/L) = -0.047 - 0.085 log10 V, scatter about 0.2 | Corominas 1996 |
+| Size classes | Fell 1994 | - |
+
+Data-driven, not hand-set:
+- graph-cut lambda (stability selection, per photo);
+- thin-plate-spline smoothing (5-fold CV, per photo);
+- head regularisation C and self-training round (val split);
+- the head's fusion weight (from val AUC);
+- the known-object scale prior (OWLv2 evidence);
+- the calibration factor (leave-one-site-out CV).
+
+**Leakage.** The outline head is fitted on the train split, and C and the round are chosen on val.
+The test split is never read. Splits are separated by site, and the train/val site overlap is
+asserted to be zero. The calibration is validated leave-one-site-out. No other part of the dimension
+pipeline is fitted on these photos.
+
+**Evaluation (`results/dimension_eval*.md`, no ground-truth sizes):**
+- outline availability;
+- stability under 8 phone-like edits;
+- the depth checks;
+- plausibility;
+- interval widths;
+- same-site consistency: different photos of the same landslide must agree.
+
+**Limitations**
+- Absolute scale is unverified until field measurements exist.
+- Volumes and thickness priors carry a factor of about 2-3x.
+- Grains are resolvable mainly in close-up deposit photos.
+- The phone is assumed upright unless the tilt sensor is used.
+- Heavy JPEG compression or blur changes sizes by 20-40 %.
+
 ## 7. Limitations and next steps
 
 1. **Human labels for the test split:** see "Label caveat" in section 2. This is the largest open

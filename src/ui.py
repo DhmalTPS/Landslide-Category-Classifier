@@ -187,6 +187,22 @@ async function shrink(file){
   return await new Promise(r=>c.toBlob(r,'image/jpeg',0.9));}catch(e){return file;}}
 function probs(r){const top=r.ranked[0][0];
  return r.ranked.map(([c,p])=>`<div class="prob ${c===top?'top':''}">${G[c]}<div class="nm">${esc(D.names[c])}<div class="tr"><div class="fl" style="width:${(p*100).toFixed(1)}%"></div></div></div><div class="pc">${pct(p)}</div></div>`).join('')}
+function dims(d){
+ if(!d.available)return `<section class="card"><div class="kicker">Dimensions</div><p class="hungr" style="margin:0">${esc(d.reason)}</p></section>`;
+ const num=v=>v>=100?Math.round(v).toLocaleString():v, row=(k,v)=>`<div class="drow"><span>${esc(k)}</span><b>${v}</b></div>`;
+ let h=`<section class="card"><div class="kicker">Estimated dimensions · depth trust: ${esc(d.depth_trust)}</div>`;
+ if(d.overlay)h+=`<img class="dimg" src="${d.overlay}" alt="Measured area outlined">`;
+ h+=d.measures.map(m=>row(m.name,`${num(m.value)} ${m.unit} <small>(90%: ${num(m.range[0])}–${num(m.range[1])})</small>`)).join('');
+ if(d.size_class){const sp=d.size_class_prob||{};h+=row('Size class (Fell 1994)',esc(d.size_class)+(Object.keys(sp).length>1?' <small>('+Object.entries(sp).map(([k,v])=>esc(k)+' '+Math.round(v*100)+'%').join(', ')+')</small>':''));}
+ if(d.block_count!=null)h+=row('Blocks counted',d.block_count+(d.block_size_class?' · largest: '+esc(d.block_size_class):''));
+ if(d.grains)h+=d.grains.reliable?row('Grain size D16 / D50 / D84',`${d.grains.D16_m} / ${d.grains.D50_m} / ${d.grains.D84_m} m <small>(D50 90%: ${d.grains.D50_90ci_m.join('–')})</small>`):row('Grain size','not resolvable in this photo (take a closer photo of the deposit)');
+ h+=row('Slope angle',d.slope_angle_deg+'°'+(d.tilt==='phone sensor'?' (phone tilt)':''));
+ if(d.travel_angle_deg!=null)h+=row('Travel angle (H/L)',`${d.travel_angle_deg}° (${d.H_over_L})`);
+ h+=row('Length / width',d.length_width_ratio)+row('Perimeter',num(d.perimeter_m)+' m')+row('Camera to slope',d.distance_m+' m');
+ if(d.alternative){const a=d.alternative;h+=`<p class="hungr" style="margin:8px 0 0">If it is <b>${esc(D.names[a.label]||a.label)}</b> (${Math.round(a.prob*100)}%): ${a.measures.slice(0,3).map(m=>esc(m.name)+' '+num(m.value)+' '+m.unit).join(' · ')}</p>`;}
+ const notes=[...d.notes,...d.depth_issues.map(x=>'Depth check: '+x)];
+ h+=`<p class="hungr" style="margin:8px 0 0">Scale: ${esc(d.scale_source)}. ${notes.map(esc).join(' ')}</p></section>`;
+ return h}
 function render(r){
  const n=D.names;let h='';
  if(r.status==='bad_photo'){
@@ -215,16 +231,27 @@ function render(r){
    <section class="card safety"><h2>${ico('alert')}Safety</h2><p>${esc(i.safety)}</p></section>`;
  }
  if(r.vlm){h+=`<section class="card"><div class="kicker">Second opinion · Qwen2.5-VL (zero-shot)</div><h2 style="display:flex;gap:8px;align-items:center">${ico('spark')}${esc(n[r.vlm.label]||r.vlm.label)} · ${pct(r.vlm.confidence)}</h2><p class="hungr" style="margin:0">${esc(r.vlm.description)}</p></section>`;}
+ if(r.dimensions)h+=dims(r.dimensions);
  h+=`<div class="meta"><span>${esc(r.model)}</span><span>${r.ms} ms</span><span>confident ≥ ${pct(D.conf)}</span></div>`;
  out.innerHTML=h;}
 function loading(){setChip('','Analysing…',true);
  out.innerHTML='<section class="card result" aria-busy="true"><div class="kicker">Analysing photo</div><div class="skel" style="width:60%;height:22px"></div><div class="skel" style="width:85%"></div><div class="skel" style="width:40%"></div></section>';}
 function fail(msg){setChip('bad','Error');
  out.innerHTML=`<section class="card bad" role="alert"><div class="kicker">Something went wrong</div><h2>${esc(msg)}</h2><p class="hungr" style="margin:0">Check the connection to the laptop running the app, then try again.</p></section>`;}
-async function go(e){const f=e.target.files[0];if(!f)return;e.target.value='';
+// phone tilt (gravity in camera axes: x right, y down, z forward) for true slope angle and height
+let tilt=null;
+function onTilt(e){if(e.beta==null)return;const b=(e.beta-90)*Math.PI/180,g=(e.gamma||0)*Math.PI/180;
+ tilt=[Math.sin(g)*Math.cos(b),Math.cos(g)*Math.cos(b),-Math.sin(b)].map(v=>v.toFixed(3)).join(',')}
+async function askTilt(){try{if(window.DeviceOrientationEvent&&DeviceOrientationEvent.requestPermission)
+ await DeviceOrientationEvent.requestPermission()}catch(_){}window.addEventListener('deviceorientation',onTilt)}
+document.querySelectorAll('.btn').forEach(b=>b.addEventListener('click',askTilt,{once:true}));
+async function go(e){const fromCam=e.target.id==='cam';const f=e.target.files[0];if(!f)return;e.target.value='';
  prev.src=URL.createObjectURL(f);fig.style.display='block';loading();fig.scrollIntoView({behavior:'smooth',block:'start'});
  try{const body=await shrink(f);
-  const res=await fetch('predict'+location.search,{method:'POST',body,headers:{'Content-Type':body.type||'application/octet-stream'}});
+  const q=new URLSearchParams(location.search),dv=parseFloat(document.getElementById('dist').value);
+  if(dv>0)q.set('d',dv);
+  if(fromCam&&tilt)q.set('g',tilt);   // gallery photos were not taken at the current tilt
+  const res=await fetch('predict?'+q,{method:'POST',body,headers:{'Content-Type':body.type||'application/octet-stream'}});
   const r=await res.json().catch(()=>({error:'Unexpected reply from the server ('+res.status+')'}));
   if(!res.ok)throw new Error(r.error||res.status);render(r);
  }catch(err){fail(err.message)}}
@@ -241,7 +268,8 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <link rel="icon" type="image/png" sizes="48x48" href="favicon.ico">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="theme-color" content="#0e4d45">
-<style>__CSS__</style></head><body>__DEFS__<main>
+<style>__CSS__.drow{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid rgba(127,127,127,.18);font-size:14px}.drow b{text-align:right;font-weight:600}.drow small{opacity:.65;font-weight:400}.dimg{width:100%;border-radius:10px;margin:10px 0}.dist{display:block;margin-top:14px;font-size:13px;opacity:.85}.dist input{display:block;width:100%;margin-top:6px;padding:10px;border-radius:10px;border:1px solid rgba(127,127,127,.4);font:inherit;background:transparent;color:inherit}
+</style></head><body>__DEFS__<main>
 <header><div class="logo">__LOGO__</div><div class="brand"><b>Landslide Type Check</b><span>Field classifier &middot; Hungr 2014</span></div></header>
 <section class="card"><div class="kicker">New observation</div><h2>Photograph the slope from below</h2>
 <ul class="tips">
@@ -251,7 +279,9 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <div class="btns">
 <label class="btn primary">__I_camera__Take photo<input id="cam" type="file" accept="image/*" capture="environment"></label>
 <label class="btn ghost">__I_image__From gallery<input id="gal" type="file" accept="image/*"></label>
-</div></section>
+</div>
+<label class="dist">Distance from you to the slope, metres (optional, makes sizes more accurate)
+<input id="dist" type="number" min="1" max="3000" step="any" inputmode="decimal" placeholder="e.g. 40"></label></section>
 <figure id="fig"><img id="prev" alt="Your photo"><div id="chip" class="chip"></div></figure>
 <div id="out"></div>
 <p class="foot">Decision support only &mdash; confirm with a geologist or geotechnical engineer before acting.<br>
@@ -264,6 +294,14 @@ def build_page(logo_svg, info, names, tips, confident_min):
     top = lambda c, p: [[c, p]] + [[o, round((1 - p) / 5, 4)] for o in names if o != c]  # noqa: E731
     samples = {
         "ok": {"status": "ok", "usable": .94, "label": "translational_slide", "family": None, "confidence": .87,
+               "dimensions": {"available": True, "label": "translational_slide", "depth_trust": "medium",
+                              "measures": [{"key": "width", "name": "Width (across slope)", "value": 18.4, "unit": "m", "range": [12.0, 24.8]},
+                                           {"key": "length", "name": "Length (down slope)", "value": 31.2, "unit": "m", "range": [20.3, 42.1]},
+                                           {"key": "area", "name": "Area of the scar", "value": 452.0, "unit": "m²", "range": [203.4, 813.6]},
+                                           {"key": "volume", "name": "Volume (Guzzetti 2009 area-volume law)", "unit": "m³", "value": 530.0, "range": [167.0, 1240.0]}],
+                              "size_class": "very small", "slope_angle_deg": 34, "travel_angle_deg": 31, "H_over_L": 0.6,
+                              "length_width_ratio": 1.7, "perimeter_m": 88.0, "distance_m": 42.0, "tilt": "assumed upright",
+                              "grains": {"reliable": False}, "scale_source": "demo values", "notes": [], "depth_issues": []},
                "ranked": [["translational_slide", .87], ["debris_flow", .05], ["fall_topple", .04],
                           ["rotational_slide", .02], ["earth_mud_flow", .01], ["no_landslide", .01]],
                "model": "demo", "ms": 0},
