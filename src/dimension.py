@@ -500,7 +500,37 @@ class Dimensioner:
                       "widths": widths, "distance": float(np.median(zz))}
 
     # ------------------------------------------------------------------ main
-    def __call__(self, img, label, f35=None, ref_distance_m=None, family=None, gravity=None):
+    @staticmethod
+    def _points_scale(depth, mask, mp, fsd):
+        """Metric scale from triangulated points: s = median(z_tri / z_model), using points on or near the
+        landslide when there are enough (the model's relative depth is most trusted where it is measured).
+        log-sd = baseline knowledge (from the set) + the robust spread of the ratios over an effective sample
+        of at most 10 (neighbouring points share the model's shape errors) + focal (the triangulated depth
+        scales with focal too, but partly cancels: only 0.3 of its log-sd is kept)."""
+        H, W = depth.shape
+        xy = np.asarray(mp["xy"], float)
+        z = np.asarray(mp["z"], float)
+        ok = (xy[:, 0] >= 0) & (xy[:, 0] < W) & (xy[:, 1] >= 0) & (xy[:, 1] < H) & (z > 0) & np.isfinite(z)
+        xy, z = xy[ok], z[ok]
+        xi, yi = xy[:, 0].astype(int), xy[:, 1].astype(int)
+        near = ndimage.binary_dilation(mask, iterations=max(3, int(0.03 * max(H, W))))[yi, xi]
+        use = near if near.sum() >= 12 else np.ones(len(z), bool)
+        lr = np.log(z[use]) - np.log(depth[yi[use], xi[use]])
+        med = float(np.median(lr))
+        mad_sd = 1.4826 * float(np.median(np.abs(lr - med)))
+        shape = mad_sd / np.sqrt(min(len(lr), 10))
+        sd = float(np.sqrt(float(mp.get("log_sd", 0.15)) ** 2 + shape ** 2 + (0.3 * fsd) ** 2))
+        src = (f"walk-along photos with a known baseline ({int(use.sum())} triangulated points"
+               f"{' on the landslide' if use is near else ''}, x{np.exp(med):.2f})")
+        return depth * np.exp(med), sd, src
+
+    def __call__(self, img, label, f35=None, ref_distance_m=None, family=None, gravity=None, focal_sd=None,
+                 focal_src=None, metric_points=None):
+        """focal_sd/focal_src: when f35 comes from somewhere other than this photo's EXIF (e.g. a joined
+        picture's focal recovered from the photo set's homographies), its log-sd and a name.
+        metric_points: {"xy": N x 2 pixel coords in img, "z": N metric depths, "log_sd": scale log-sd of the
+        source} from a walk-along set triangulated with a known baseline (overlap.stereo_points); it sets the
+        metric scale (after a typed distance, before objects and the prior)."""
         if label not in PROMPTS:
             label = FAMILY_LABEL.get(family)
         if label is None:
@@ -516,11 +546,12 @@ class Dimensioner:
             depth, logvar, f_pro, per_model, flip_stab = self.depth(img, f_exif)
         f_def = DEFAULT_F35 / 36.0 * max(W, H)
         if f_exif:
-            f, focal_src = f_exif, "EXIF"
+            f, focal_src = f_exif, focal_src or "EXIF"
         elif f_pro and 0.5 * f_def < f_pro < 3 * f_def:
             f, focal_src = f_pro, "Depth Pro estimate"
         else:
             f, focal_src = f_def, "typical phone camera"
+        fsd = focal_sd if (focal_sd is not None and f_exif) else FOCAL_SD.get(focal_src, 0.25)
 
         # 2. outline: fuse CLIPSeg + head + SAM soft, damp vegetation/sky, graph cut
         with self.use(self.seg):
@@ -557,7 +588,9 @@ class Dimensioner:
         obj = None
         if ref_distance_m:
             depth = depth * float(ref_distance_m) / np.median(depth[mask])
-            scale_sd, scale_src = float(np.hypot(0.07, FOCAL_SD[focal_src])), "your distance"
+            scale_sd, scale_src = float(np.hypot(0.07, fsd)), "your distance"
+        elif metric_points and len(metric_points.get("z", [])) >= 8:
+            depth, scale_sd, scale_src = self._points_scale(depth, mask, metric_points, fsd)
         else:
             with self.use(self.owl):
                 obj = self.object_scale(img, depth, f)
@@ -571,13 +604,13 @@ class Dimensioner:
                 scale_sd, scale_src = float(np.log1p(cv / 100) * 1.25), "field calibration"
             else:
                 scale_sd = float(np.sqrt(DEPTH_SD ** 2 + between + self._model_scale_sd ** 2
-                                         + (0.6 * FOCAL_SD[focal_src]) ** 2))
+                                         + (0.6 * fsd) ** 2))
                 scale_src = f"depth ensemble ({len(per_model)} models), focal from {focal_src}"
                 if self.obj_prior.get("n", 0) >= 4:
                     depth = depth * self.obj_prior["factor"]
                     # the correction replaces the ensemble's unknown bias with the object evidence's own spread
                     scale_sd = float(np.sqrt(self.obj_prior["predictive_log_sd"] ** 2 + between
-                                             + (0.6 * FOCAL_SD[focal_src]) ** 2))
+                                             + (0.6 * fsd) ** 2))
                     scale_src += f", corrected x{self.obj_prior['factor']} by known-size objects (n={self.obj_prior['n']})"
 
         # 4. geometry for the outline and its variants

@@ -125,7 +125,7 @@ CSS = """
 .journey li::before{content:counter(j);display:grid;place-items:center;width:24px;height:24px;margin:0 auto 4px;border-radius:50%;border:1.5px solid var(--line);font-weight:700;background:var(--surface)}
 .journey li.done::before{content:"\\2713";background:var(--tint-ground);border-color:var(--teal-400);color:var(--teal-600)}
 .journey li.on{color:var(--ink);font-weight:650}.journey li.on::before{background:var(--g-ground);color:#fff;border-color:transparent}
-.seg{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);margin:0 0 14px}
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:4px;padding:4px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);margin:0 0 14px}
 .seg button{border:0;border-radius:9px;padding:9px;font:600 .88rem inherit;background:transparent;color:var(--ink-2);cursor:pointer}
 .seg button[aria-pressed=true]{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
 .shots{list-style:none;margin:0 0 14px;padding:0;display:grid;gap:8px}
@@ -229,9 +229,10 @@ step(sess.get('safe')?1:0);
 let mode=store.get('mode','single'),shot=+(sess.get('shot')||0),done=new Set(JSON.parse(sess.get('done')||'[]'));
 function saveShots(){sess.set('shot',shot);sess.set('done',JSON.stringify([...done]))}
 function drawMode(){
- $('#mode').innerHTML=`<button type="button" data-m="single" aria-pressed="${mode==='single'}">Single photo</button><button type="button" data-m="survey" aria-pressed="${mode==='survey'}">Site survey (4 shots)</button>`;
+ $('#mode').innerHTML=`<button type="button" data-m="single" aria-pressed="${mode==='single'}">Single photo</button><button type="button" data-m="survey" aria-pressed="${mode==='survey'}">Site survey (4 shots)</button><button type="button" data-m="pano" aria-pressed="${mode==='pano'}">Overlapping set</button>`;
  $('#shots').innerHTML=mode!=='survey'?'':G.shots.map((s,k)=>`<li data-k="${k}" class="${k===shot?'cur':''} ${done.has(s.id)?'done':''}" tabindex="0" role="button" aria-current="${k===shot}"><span class="n">${done.has(s.id)?'&#10003;':k+1}</span><span><b>${esc(s.t)}</b><span>${esc(s.d)}</span></span></li>`).join('')+(done.size?`<li class="newsite" data-new="1" role="button" tabindex="0"><span class="n">+</span><span><b>Start a new site</b><span>Clears the shot list, notes and location for the next landslide.</span></span></li>`:'');
- const h=$('#capH');if(h)h.textContent=mode==='survey'?'Shot '+(shot+1)+' of '+G.shots.length+': '+G.shots[shot].t:'Photograph the slope from below';}
+ const h=$('#capH');if(h)h.textContent=mode==='survey'?'Shot '+(shot+1)+' of '+G.shots.length+': '+G.shots[shot].t:mode==='pano'?'Cover the slope with overlapping photos':'Photograph the slope from below';
+ A.pano&&A.pano.show(mode==='pano')}
 $('#mode').addEventListener('click',e=>{const m=e.target.dataset.m;if(m){mode=m;store.set('mode',m);drawMode()}});
 $('#shots').addEventListener('click',e=>{const li=e.target.closest('li');if(!li)return;if(li.dataset.new){newSite();return}shot=+li.dataset.k;saveShots();drawMode()});
 function newSite(){done.clear();shot=0;saveShots();['survey','site','notes','gps','weather'].forEach(k=>sess.set(k,''));sess.set('siteId',String(Date.now()));
@@ -367,28 +368,32 @@ document.querySelectorAll('.btn').forEach(b=>b.addEventListener('click',listenOr
 /* ---------- live viewfinder ---------- */
 let stream=null,loop=null,wasReady=false,lastSay=0,cap=null;
 const vf=$('#vf'),vid=vf.querySelector('video');
-async function openFinder(){listenOri();step(1);vf.hidden=false;const s=curShot();
- vf.querySelector('.vfg').dataset.frame=s?s.frame:'full';vf.querySelector('.vfs').textContent=s?'Shot '+(shot+1)+': '+s.t:'Frame the whole slope';
+async function openFinder(){listenOri();step(1);vf.hidden=false;const s=curShot(),pz=mode==='pano'&&A.pano;
+ vf.querySelector('.vfg').dataset.frame=s?s.frame:pz?'pano':'full';vf.querySelector('.vfs').textContent=s?'Shot '+(shot+1)+': '+s.t:pz?A.pano.label():'Frame the whole slope';
+ if(pz)A.pano.finder(true);
  vf.querySelector('[data-a=voice]').textContent=voice?'\u{1F50A}':'\u{1F507}';
  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:3840},height:{ideal:2160}},audio:false});
   vid.srcObject=stream;await vid.play();
   try{const tr=stream.getVideoTracks()[0];cap=window.ImageCapture?new ImageCapture(tr):null}catch(_){cap=null}
-  prevG=null;wasReady=false;loop=setInterval(liveTick,450);say(s?s.d:'Frame the whole slope from below, top to bottom.');
+  prevG=null;wasReady=false;loop=setInterval(liveTick,450);say(s?s.d:pz?A.pano.hint():'Frame the whole slope from below, top to bottom.');
   vf.querySelector('[data-a=shoot]').focus()}
  catch(err){closeFinder();camIn.click()}}
-function closeFinder(){clearInterval(loop);loop=null;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;vf.hidden=true}
-function liveTick(){if(!vid.videoWidth)return;const m=metrics(vid,true),t=ori,c=judge(m,t).filter(x=>x[0]!=='Resolution'),pills=[],bad=c.filter(x=>x[1]);
+function closeFinder(){clearInterval(loop);loop=null;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;vf.hidden=true;A.pano&&A.pano.finder(false)}
+function liveTick(){if(!vid.videoWidth)return;const m=metrics(vid,true),t=ori,c=judge(m,t).filter(x=>x[0]!=='Resolution'&&!(mode==='pano'&&x[0]==='Framing')),pills=[],bad=c.filter(x=>x[1]);
+ const px=mode==='pano'&&A.pano?A.pano.tick(vid,t):null;if(px){bad.unshift(...px.bad)}
  const steady=m.motion==null||m.motion<G.steadyMax;if(!steady)bad.push(['Steady','Hold still for a moment.']);
  const lvl=vf.querySelector('.lvl');if(t){lvl.style.transform=`translate(-50%,-50%) rotate(${-t.roll}deg)`;lvl.classList.toggle('ok',Math.abs(t.roll)<=3)}else lvl.style.display='none';
  for(const [k,v] of c)pills.push(`<span class="${v?'warn':'ok'}">${k}</span>`);pills.push(`<span class="${steady?'ok':'warn'}">Steady</span>`);
  if(t)pills.push(`<span class="${t.elev>=-10&&t.elev<=45?'ok':'warn'}">Aim ${Math.round(t.elev)}°</span>`);
+ if(px)pills.unshift(...px.pills);
  vf.querySelector('.pills').innerHTML=pills.join('');
- const ready=!bad.length,msg=ready?'Good. Take the photo.':bad[0][1];vf.querySelector('.vfmsg').textContent=msg;
+ const ready=!bad.length,msg=ready?(px&&px.good)||'Good. Take the photo.':bad[0][1];vf.querySelector('.vfmsg').textContent=msg;
  vf.querySelector('.shutter').classList.toggle('ready',ready);vf.querySelector('.vfr').textContent=ready?'Ready':'';
  const now=Date.now();if(ready&&!wasReady){buzz(30);say(msg);lastSay=now}else if(!ready&&now-lastSay>5000){say(msg);lastSay=now}wasReady=ready}
 async function shoot(){const t=ori;let blob=null;buzz([20,40,20]);
  try{if(cap&&cap.takePhoto)blob=await cap.takePhoto()}catch(_){blob=null}
  if(!blob){const c=document.createElement('canvas');c.width=vid.videoWidth;c.height=vid.videoHeight;c.getContext('2d').drawImage(vid,0,0);blob=await new Promise(r=>c.toBlob(r,'image/jpeg',.92))}
+ if(mode==='pano'&&A.pano){gstate.live=true;A.pano.shot(blob,t,vid);return}
  closeFinder();start(blob,true,t,true)}
 vf.addEventListener('click',e=>{const a=e.target.closest('[data-a]')?.dataset.a;if(a==='close')closeFinder();if(a==='shoot')shoot();
  if(a==='native'){closeFinder();camIn.click()}if(a==='voice'){voice=!voice;store.set('voice',voice);e.target.textContent=voice?'\u{1F50A}':'\u{1F507}';say('Voice guidance on')}});
@@ -440,15 +445,16 @@ const meta=()=>({t:Date.now(),notes:notes.value.trim(),weather:weather.value,gps
 
 /* ---------- what the guidance did (sent with the photo, logged for tools/guidance_report.py) ---------- */
 let gstate={flags:[],override:false,retakes:0,live:false};
-const gx=()=>JSON.stringify({flags:gstate.flags,override:gstate.override,retakes:gstate.retakes,live:gstate.live,mode,shot:curShot()?.id||'',lang});
+const gx=()=>JSON.stringify({flags:gstate.flags,override:gstate.override,retakes:gstate.retakes,live:gstate.live,mode,shot:curShot()?.id||'',lang,set:mode==='pano'&&A.pano?A.pano.gx():''});
 function params(o){const q=new URLSearchParams(location.search);q.delete('demo');for(const [k,v] of Object.entries(o))if(v!=null&&v!=='')q.set(k,v);return q}
 const gArg=()=>lastSrc==='cam'&&lastTilt?lastTilt.g:null;
 const ema=(k,v,d)=>Math.round(.6*store.get(k,d)+.4*v);
 
 /* ---------- instant photo check ---------- */
-let lastBlob=null,lastTilt=null,lastSrc='cam',lastDist=null,xhr=null,job=null,cur=null,curMeta=null,curPhoto='';
+let lastF35=null,lastBlob=null,lastTilt=null,lastSrc='cam',lastDist=null,xhr=null,job=null,cur=null,curMeta=null,curPhoto='';
 A.onPick=(f,fromCam)=>start(f,fromCam,fromCam?ori:null,false);
 async function start(file,fromCam,t,live){lastSrc=fromCam?'cam':'gal';gstate.live=!!live;gstate.override=false;step(2);
+ lastF35=A.f35Of?await A.f35Of(file):null;
  const fig=$('#fig'),prev=$('#prev');prev.src=URL.createObjectURL(file);fig.style.display='block';A.setChip('','Checking photo…',true);
  fig.scrollIntoView({behavior:'smooth',block:'start'});
  let m=null;try{const bmp=await createImageBitmap(file,{imageOrientation:'from-image'});m=metrics(bmp);bmp.close&&bmp.close()}catch(_){}
@@ -488,12 +494,12 @@ function send(){const dv=parseFloat(dist.value);lastDist=dv>=1&&dv<=3000?dv:null
  if(!navigator.onLine){queueIt();return}
  A.setChip('','Identifying…',true);busy('Analysing photo');
  const P=prog($('#pg'),G.stagesType,store.get('etaT',4000),true);
- post('predict?'+params({stage:'type',d:lastDist,g:gArg(),gx:gx()}),lastBlob,P,{
+ post('predict?'+params({stage:'type',d:lastDist,g:gArg(),f35:lastF35,gx:gx()}),lastBlob,P,{
   ok:r=>{if(r.ms)store.set('etaT',ema('etaT',r.ms,4000));cur=r;job=r.job||null;A.render(r);afterType(r);if(job)measure();else finish(r)},
   err:(m,s)=>s===-2?cancelled():fail(m,s===0)})}
 function fullSend(d0){A.setChip('','Analysing…',true);busy('Sending the photo again');
  const P=prog($('#pg'),G.stagesType.concat(G.stagesDims.map(([f,t])=>[.12+f*.88,t])),store.get('etaT',4000)+store.get('etaD',28000),true);
- post('predict?'+params({stage:'full',d:d0??lastDist,g:gArg(),gx:gx()}),lastBlob,P,{
+ post('predict?'+params({stage:'full',d:d0??lastDist,g:gArg(),f35:lastF35,gx:gx()}),lastBlob,P,{
   ok:r=>{if(d0)lastDist=d0;const id=cur&&cur.__id;cur=r;if(id)r.__id=id;job=null;A.render(r);afterType(r);if(r.dimensions)afterDims(r);finish(r)},
   err:(m,s)=>s===-2?cancelled():fail(m,s===0)})}
 function measure(d0){const slot=document.createElement('section');slot.className='card';slot.id='dimslot';
@@ -614,7 +620,7 @@ function reportBar(){const b=document.createElement('div');b.className='btns';b.
  const m=out.querySelector('.meta');m?out.insertBefore(b,m):out.appendChild(b);
  b.onclick=e=>{const a=e.target.closest('[data-a]')?.dataset.a;if(a==='report')saveReport();if(a==='share')share()}}
 const RCSS='body{font:15px/1.5 system-ui,sans-serif;max-width:780px;margin:24px auto;padding:0 16px;color:#13201c}h1{font-size:1.35rem}h2{font-size:1.05rem;margin-top:22px}table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #ddd;padding:6px;text-align:left;vertical-align:top}img{max-width:100%;border-radius:8px;margin:8px 0}.m{color:#5c6b65;font-size:.9rem}';
-function metaHTML(mt){return `<p class="m">${new Date(mt.t).toLocaleString()}${mt.gps?` · <a href="https://www.openstreetmap.org/?mlat=${mt.gps.lat}&mlon=${mt.gps.lon}#map=17/${mt.gps.lat}/${mt.gps.lon}">${mt.gps.lat.toFixed(5)}, ${mt.gps.lon.toFixed(5)}</a> (±${Math.round(mt.gps.acc)} m)`:''}${mt.weather?' · '+esc(mt.weather):''}${mt.shot?' · '+esc(mt.shot):''}${mt.dist?' · distance '+mt.dist+' m':''}</p>${mt.notes?`<p><b>Notes:</b> ${esc(mt.notes)}</p>`:''}`}
+function metaHTML(mt){return `<p class="m">${new Date(mt.t).toLocaleString()}${mt.gps?` · <a href="https://www.openstreetmap.org/?mlat=${mt.gps.lat}&mlon=${mt.gps.lon}#map=17/${mt.gps.lat}/${mt.gps.lon}">${mt.gps.lat.toFixed(5)}, ${mt.gps.lon.toFixed(5)}</a> (±${Math.round(mt.gps.acc)} m)`:''}${mt.weather?' · '+esc(mt.weather):''}${mt.shot?' · '+esc(mt.shot):''}${mt.set?' · '+esc(mt.set):''}${mt.dist?' · distance '+mt.dist+' m':''}</p>${mt.notes?`<p><b>Notes:</b> ${esc(mt.notes)}</p>`:''}`}
 function resultHTML(r,photo){const N=D.names,d=r.dimensions;let h=photo?`<img src="${photo}" alt="photo">`:'';
  h+=`<h2>Type</h2><p><b>${r.status==='bad_photo'?'Photo not usable: retake':esc(N[r.label])}</b> · ${Math.round(r.confidence*100)}% (${esc(r.status)}${r.family?', '+esc(r.family)+' family':''})</p><table>${r.ranked.map(([c,p])=>`<tr><td>${esc(N[c])}</td><td>${Math.round(p*100)}%</td></tr>`).join('')}</table>`;
  if(r.answers&&r.answers.length)h+=`<h2>Field questions</h2><table>${r.answers.map(a=>`<tr><td>${esc(a.q)}</td><td>${a.a}</td></tr>`).join('')}</table>${r.fieldRanked?`<p>With these answers: <b>${esc(N[r.fieldRanked[0][0]])}</b> ${Math.round(r.fieldRanked[0][1]*100)}%</p>`:''}`;
@@ -645,7 +651,7 @@ async function share(){if(!cur)return;const r=cur,mt=curMeta||meta(),N=D.names,d
   else{await navigator.clipboard.writeText(txt);toast('Summary copied: paste it into a message or e-mail.')}}catch(e){if(e&&e.name!=='AbortError')toast('Sharing is not available here: use Save report.')}}
 
 /* ---------- offline queue: photos wait on the phone and are sent when the connection is back ---------- */
-async function queueIt(){const it={id:Date.now(),blob:lastBlob,q:params({stage:'full',d:lastDist,g:gArg(),gx:gx()}).toString(),meta:curMeta||meta(),photo:await photoURL(lastBlob,720),site:siteId()};
+async function queueIt(){const it={id:Date.now(),blob:lastBlob,q:params({stage:'full',d:lastDist,g:gArg(),f35:lastF35,gx:gx()}).toString(),meta:curMeta||meta(),photo:await photoURL(lastBlob,720),site:siteId()};
  const ok=await safe(async()=>{await DB.put('queue',it);return true},false);
  A.setChip('signal',ok?'Saved for later':'Offline');step(1);
  out.innerHTML=`<section class="card bad" aria-live="polite"><div class="kicker">No connection</div><h2>${ok?'Saved on the phone: it will be analysed automatically when the connection is back':'You are offline and this browser cannot store the photo'}</h2>
@@ -682,6 +688,13 @@ async function openHist(id){const x=await safe(()=>DB.get('results',id),null);if
  $('#prev').src=curPhoto;$('#fig').style.display=curPhoto?'block':'none';A.render(cur);typeChip(cur);afterType(cur,true);if(cur.dimensions)afterDims(cur,true);
  $('#fig').scrollIntoView({behavior:'smooth',block:'start'})}
 drawHist();A._metrics=metrics;A._judge=judge;A._fuse=fuse;A._flush=flush;A._q=()=>safe(()=>DB.all('queue'),[]);A._st=()=>({flushing,done:[...done],shot,mode,curId:cur&&cur.__id,metaShot:curMeta&&curMeta.shotId,site:!!sess.get('site')});   // exposed for tests
+/* ---------- shared with the overlapping-set module (src/pano.py) ---------- */
+function runSet(r,blob,g,label){lastBlob=blob;lastSrc=g?'cam':'gal';lastTilt=g?{g}:null;const dv=parseFloat(dist.value);lastDist=dv>=1&&dv<=3000?dv:null;
+ curMeta=meta();curMeta.set=label||'';cur=r;job=r.job||null;const fig=$('#fig');$('#prev').src=URL.createObjectURL(blob);fig.style.display='block';
+ if(r.ms)store.set('etaT',ema('etaT',r.ms,4000));A.render(r);afterType(r);if(job)measure();else finish(r)}
+A._g={say,buzz,toast,tr,store,sess,step,safety,openFinder,closeFinder,openCamera,ICO,LIVE,prog,post,busy,cancelled,params,gx,runSet,fail,RX,out,vf,vid,
+ ori:()=>ori,mode:()=>mode,setMode:m=>{mode=m;store.set('mode',m);drawMode()},abort:()=>xhr&&xhr.abort(),camIn,galIn,ema};
+A.pano&&A.pano.init();
 const demo=new URLSearchParams(location.search).get('demo');   // demo pages show the guidance too (nothing saved)
 if(demo&&D.samples[demo]&&out.firstElementChild){cur=D.samples[demo];afterType(cur,true);if(cur.dimensions)afterDims(cur,true)}
 })();

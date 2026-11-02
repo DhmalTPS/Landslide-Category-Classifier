@@ -15,6 +15,7 @@ tqdm==4.70.1
 scikit-image==0.26.0   # dimension estimate: grain photo-sieving, contours
 tabulate==0.10.0      # results tables in tools/dimension_eval.py
 PyMaxflow==1.3.2      # dimension estimate: graph-cut outline (max-flow)
+opencv-python-headless==5.0.0.93   # overlapping photo sets: SIFT matching, MAGSAC++, joining (src/overlap.py)
 # only for the Qwen-VL baseline / --vlm second opinion (GPU):
 accelerate==1.15.0
 bitsandbytes==0.50.2

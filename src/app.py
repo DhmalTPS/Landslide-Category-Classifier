@@ -41,6 +41,7 @@ from logo import LOGO_SVG, png as logo_png
 from ui import build_page
 from predict import Predictor, load_image
 from dimension import Dimensioner, draw_overlay, focal_35mm, fuse_site, measure_ranked
+import overlap
 
 ICONS = {"/favicon.svg": (LOGO_SVG.encode(), "image/svg+xml"),
          "/favicon.ico": (logo_png(48), "image/png"),
@@ -52,6 +53,7 @@ warnings.simplefilter("error", Image.DecompressionBombWarning)   # 40-80 MP woul
 UPLOADS = DATA / "app_uploads"
 
 MAX_JOBS = 6       # photos kept in memory for the size step (each ~36 MB decoded at 12 MP)
+MAX_SETS = 3       # overlapping photo sets kept between the overlap check and "join and analyse"
 EDGE_CUT = 0.15    # same rule as dimension.py's "cut_off": >15% of an image border covered by the outline
 
 
@@ -92,7 +94,7 @@ def fuse_shots(shots):
 
 
 GUIDE_LOG = UPLOADS / "guidance_log.csv"
-GUIDE_FIELDS = ("flags", "override", "retakes", "live", "mode", "shot", "lang")
+GUIDE_FIELDS = ("flags", "override", "retakes", "live", "mode", "shot", "lang", "set")
 
 
 def log_guidance(gx, stamp, r):
@@ -204,6 +206,8 @@ class VLM:
 def make_handler(pred, vlm, save, max_saved=2000, token=None, dim=None):
     lock = threading.Lock()       # one photo at a time: decode, predict, save (bounded memory)
     jobs = OrderedDict()          # recent classified photos: sizes follow (and re-measure) without a re-upload
+    sets = OrderedDict()          # recent overlap checks: "join and analyse" follows without a re-upload
+    olock = threading.Lock()      # overlap checks run on the CPU, beside the GPU photo lock
     names = {c: INFO[c]["title"] for c in CLASSES}
     page = build_page(LOGO_SVG, INFO, names, PHOTO_TIPS, pred.confident_min)
 
@@ -257,10 +261,21 @@ def make_handler(pred, vlm, save, max_saved=2000, token=None, dim=None):
                 grav = None
             return dist, grav
 
-        def _measure(self, img, raw, r):
-            """Dimensions for one classified photo (+ which photo edges the outline runs off)."""
+        def _f35(self):
+            """35 mm-equivalent focal length read by the phone from the original photo's EXIF (the browser's
+            shrunk upload has none); None if absent or implausible."""
+            try:
+                v = float(self._q("f35") or 0)
+            except ValueError:
+                return None
+            return v if 8 <= v <= 200 else None
+
+        def _measure(self, img, raw, r, f35=None, **kw):
+            """Dimensions for one classified photo (+ which photo edges the outline runs off).
+            f35: focal length known by other means (phone EXIF, a joined picture); else the upload's own EXIF.
+            kw: extra evidence for the size step (focal_sd, metric_points from a walk-along set)."""
             dist, grav = self._dist_grav()
-            d = measure_ranked(dim, img, r, f35=focal_35mm(raw), ref_distance_m=dist, gravity=grav)
+            d = measure_ranked(dim, img, r, f35=f35 or self._f35() or focal_35mm(raw), ref_distance_m=dist, gravity=grav, **kw)
             if "overlay" in d:
                 mask = np.asarray(d.pop("overlay"), bool)
                 d["cut_edges"] = cut_edges(mask)
@@ -271,21 +286,110 @@ def make_handler(pred, vlm, save, max_saved=2000, token=None, dim=None):
                 d["overlay"] = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
             return d
 
+        def _save(self, img, r, stamp=None):
+            """Keep the upload (to label later) with its prediction and what the guidance did."""
+            if not save or len(list(UPLOADS.glob("*.jpg"))) >= max_saved:
+                return
+            stamp = stamp or datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            UPLOADS.mkdir(parents=True, exist_ok=True)
+            img.save(UPLOADS / f"{stamp}.jpg", quality=92)
+            log = UPLOADS / "log.csv"
+            pd.DataFrame([{"file": f"{stamp}.jpg", "status": r["status"], "usable": round(r["usable"], 3),
+                           "pred": r["label"], "conf": round(r["confidence"], 3), "model": r["model"]}]
+                         ).to_csv(log, mode="a", header=not log.exists(), index=False)
+            log_guidance(self._q("gx"), stamp, r)
+
+        def _overlap(self, raw):
+            """Check an overlapping set: which photos overlap, how well, in which order; join a turning set."""
+            body = json.loads(raw)
+            urls = body["images"]
+            if not isinstance(urls, list) or not 2 <= len(urls) <= overlap.MAX_IMAGES:
+                return self._json(400, {"error": f"send 2-{overlap.MAX_IMAGES} photos"})
+            imgs, raws = [], []
+            for u in urls:
+                b = base64.b64decode(str(u).split(",", 1)[-1])
+                imgs.append(load_image(io.BytesIO(b)))
+                raws.append(b)
+            f35 = [float(v) if isinstance(v, (int, float)) else None for v in (body.get("f35") or [])][:len(imgs)]
+            kind = self._q("kind") or body.get("kind") or "turn"
+            with olock:
+                rep, ex = overlap.analyse(imgs, kind, f35)
+            sid = uuid.uuid4().hex[:16]
+            sets[sid] = {"imgs": imgs, "raws": raws, "ex": ex, "rep": rep, "f35": f35}
+            while len(sets) > MAX_SETS:
+                sets.popitem(last=False)
+            rep["set"] = sid
+            print(f"{datetime.now():%H:%M:%S} overlap    {len(imgs)} photos {rep['detected']} {rep['verdict']} ({rep['ms']} ms)")
+            return self._json(200, rep)
+
+        def _pano(self):
+            """Type for a checked set (joined picture + single photos), then sizes via /measure?job=."""
+            st = sets.get(self._q("set"))
+            if st is None:
+                return self._json(410, {"error": "the photo set is no longer on the server; sending it again"})
+            ex, rep = st["ex"], st["rep"]
+            main = ex["main"]
+            t0 = time.time()
+            with lock:
+                batch = [st["imgs"][i] for i in main] + ([ex["mosaic"]] if ex["mosaic"] is not None else [])
+                res = pred(batch)
+                singles, rm = res[:len(main)], (res[-1] if ex["mosaic"] is not None else None)
+                probs, u = overlap.combine(rm, singles)
+                r = pred.decide(u, probs)
+                r["model"] += " (photo set)"
+                if ex["mosaic"] is not None:
+                    img, f35 = ex["mosaic"], ex["mosaic_f35"]
+                    raw = overlap.jpeg(img, f35)
+                    r["image"] = "data:image/jpeg;base64," + base64.b64encode(raw).decode()
+                    r["ref"] = ex["ref"]
+                else:
+                    c = ex["central"]
+                    img, raw = st["imgs"][c], st["raws"][c]
+                    f35 = (st["f35"][c] if c < len(st["f35"]) else None) or None
+                    r["ref"] = c
+                r["set"] = {"n": len(main), "joined": ex["mosaic"] is not None, "detected": rep["detected"],
+                            "span_deg": rep["span_deg"], "focal_source": rep["focal_source"],
+                            "photos": [{"i": i, "label": s["label"], "confidence": round(s["confidence"], 3)}
+                                       for i, s in zip(main, singles)],
+                            "joined_type": ({"label": rm["label"], "confidence": round(rm["confidence"], 3)} if rm else None)}
+                r["measurable"] = bool(dim) and r["status"] != "bad_photo"
+                if r["measurable"]:
+                    r["job"] = uuid.uuid4().hex[:16]
+                    jobs[r["job"]] = (img, raw, {k: r.get(k) for k in ("label", "ranked", "status", "family")}, f35)
+                    while len(jobs) > MAX_JOBS:
+                        jobs.popitem(last=False)
+                r.update(ms=int((time.time() - t0) * 1000), names=names, info=INFO, tips=PHOTO_TIPS)
+                self._save(img, r)
+            print(f"{datetime.now():%H:%M:%S} {r['status']:10s} {r['label']} {r['confidence']:.0%} ({r['ms']} ms, set of {len(main)})")
+            return self._json(200, r)
+
         def do_POST(self):
             path = urlparse(self.path).path
-            if path not in ("/predict", "/measure", "/fuse"):
+            if path not in ("/predict", "/measure", "/fuse", "/overlap", "/pano"):
                 return self._send(404, "not found", "text/plain")
             try:
                 n = int(self.headers.get("Content-Length", 0))
             except ValueError:
                 n = 0
-            limit = {"/predict": 25_000_000, "/measure": 0, "/fuse": 2_000_000}[path]
-            if not (0 < n <= limit or (path == "/measure" and n == 0)):
+            limit = {"/predict": 25_000_000, "/measure": 0, "/fuse": 2_000_000, "/overlap": 40_000_000, "/pano": 0}[path]
+            if not (0 < n <= limit or (path in ("/measure", "/pano") and n == 0)):
                 self.close_connection = True   # body not read: do not reuse this connection
                 return self._json(400, {"error": "send one photo (max 25 MB)" if path == "/predict" else "bad request"})
             raw = self.rfile.read(n) if n else b""   # read the (bounded) body before answering, even to refuse
             if not self._authorized():
                 return self._json(403, {"error": "missing or wrong ?t= token"})
+            if path == "/overlap":
+                try:
+                    return self._overlap(raw)
+                except Exception as e:
+                    print(f"overlap check failed: {e!r}")
+                    return self._json(400, {"error": f"could not check the photo set ({type(e).__name__})"})
+            if path == "/pano":
+                try:
+                    return self._pano()
+                except Exception as e:
+                    print(f"photo set failed: {e!r}")
+                    return self._json(500, {"error": "the model failed on this photo set; try again"})
             if path == "/fuse":
                 try:
                     return self._json(200, fuse_shots(json.loads(raw)["shots"]))
@@ -321,7 +425,7 @@ def make_handler(pred, vlm, save, max_saved=2000, token=None, dim=None):
                     r["measurable"] = bool(dim) and r["status"] != "bad_photo"
                     if r["measurable"] and stage == "type":
                         r["job"] = uuid.uuid4().hex[:16]
-                        jobs[r["job"]] = (img, raw, {k: r.get(k) for k in ("label", "ranked", "status", "family")})
+                        jobs[r["job"]] = (img, raw, {k: r.get(k) for k in ("label", "ranked", "status", "family")}, self._f35())
                         while len(jobs) > MAX_JOBS:
                             jobs.popitem(last=False)
                     elif r["measurable"]:
@@ -330,15 +434,7 @@ def make_handler(pred, vlm, save, max_saved=2000, token=None, dim=None):
                     print(f"prediction failed: {e!r}")
                     return self._json(500, {"error": "the model failed on this photo; try again"})
                 r.update(ms=int((time.time() - t0) * 1000), names=names, info=INFO, tips=PHOTO_TIPS)
-                if save and len(list(UPLOADS.glob("*.jpg"))) < max_saved:
-                    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-                    UPLOADS.mkdir(parents=True, exist_ok=True)
-                    img.save(UPLOADS / f"{stamp}.jpg", quality=92)
-                    log = UPLOADS / "log.csv"
-                    pd.DataFrame([{"file": f"{stamp}.jpg", "status": r["status"], "usable": round(r["usable"], 3),
-                                   "pred": r["label"], "conf": round(r["confidence"], 3), "model": r["model"]}]
-                                 ).to_csv(log, mode="a", header=not log.exists(), index=False)
-                    log_guidance(self._q("gx"), stamp, r)
+                self._save(img, r)
             print(f"{datetime.now():%H:%M:%S} {r['status']:10s} {r['label']} {r['confidence']:.0%} ({r['ms']} ms, {stage})")
             self._json(200, r)
 

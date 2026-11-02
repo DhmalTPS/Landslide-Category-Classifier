@@ -1,0 +1,39 @@
+{
+ "min_inliers": 30,
+ "parallax_px": 1.5,
+ "bands": {
+  "turn": {
+   "gap": 0.05,
+   "weak": 0.2,
+   "dup": 0.85,
+   "ideal": [
+    0.3,
+    0.6
+   ]
+  },
+  "walk": {
+   "gap": 0.35,
+   "weak": 0.55,
+   "dup": 0.92,
+   "ideal": [
+    0.6,
+    0.8
+   ]
+  }
+ },
+ "roll_deg": 5.0,
+ "zoom_ratio": 1.15,
+ "light_ratio": 1.4,
+ "mosaic_weight": 0.25,
+ "calibrated": {
+  "train_turn_pairs": 450,
+  "train_walk_pairs": 300,
+  "train_unrelated": 150,
+  "overlap_mae": 0.0019,
+  "false_link": 0.0,
+  "walk_detected": {
+   "0.08": 1.0,
+   "0.15": 1.0
+  }
+ }
+}

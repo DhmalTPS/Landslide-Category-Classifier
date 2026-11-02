@@ -131,24 +131,25 @@ class Predictor:
         if self.cnn:
             parts.append(self._cnn_probs(images))
         probs = np.mean(parts, axis=0)
-        out = []
-        for u, p in zip(usable, probs):
-            ranked = sorted(((c, float(v)) for c, v in zip(CLASS_NAMES, p)), key=lambda kv: -kv[1])
-            if u < USABLE_MIN:
-                status = "bad_photo"
-            elif ranked[0][1] < self.confident_min:
-                status = "uncertain"
-            else:
-                status = "ok"
-            family = None
-            if status == "uncertain":
-                top2 = {ranked[0][0], ranked[1][0]}
-                for fam, members in FAMILIES.items():
-                    if top2 == set(members) and ranked[0][1] + ranked[1][1] >= self.confident_min:
-                        family = fam
-            out.append({"status": status, "usable": float(u), "label": ranked[0][0], "family": family,
-                        "confidence": ranked[0][1], "ranked": ranked, "model": self.model_name})
-        return out
+        return [self.decide(u, dict(zip(CLASS_NAMES, p))) for u, p in zip(usable, probs)]
+
+    def decide(self, u, probs):
+        """Photo-check probability + class probabilities -> result dict (also used for combined photo sets)."""
+        ranked = sorted(((c, float(probs.get(c, 0.0))) for c in CLASS_NAMES), key=lambda kv: -kv[1])
+        if u < USABLE_MIN:
+            status = "bad_photo"
+        elif ranked[0][1] < self.confident_min:
+            status = "uncertain"
+        else:
+            status = "ok"
+        family = None
+        if status == "uncertain":
+            top2 = {ranked[0][0], ranked[1][0]}
+            for fam, members in FAMILIES.items():
+                if top2 == set(members) and ranked[0][1] + ranked[1][1] >= self.confident_min:
+                    family = fam
+        return {"status": status, "usable": float(u), "label": ranked[0][0], "family": family,
+                "confidence": ranked[0][1], "ranked": ranked, "model": self.model_name}
 
 
 def main():

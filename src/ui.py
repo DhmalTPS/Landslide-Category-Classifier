@@ -12,6 +12,7 @@ The page works offline (system fonts, inline SVG, no external files) and has a d
 import json
 
 import guide
+import pano
 
 # ---------------------------------------------------------------- shared SVG definitions
 # Glyphs reuse the logo's geometry (64x64 grid, contour arcs, round caps): one visual family.
@@ -63,7 +64,7 @@ GLYPHS = {
         _arc(22, 90, 0, dx=-21, dy=0) + _arc(13, 90, 0, dx=-21, dy=0) +
         _arc(22, 180, 90, dx=33, dy=0) + _arc(13, 180, 90, dx=33, dy=0) +
         '<circle cx="31" cy="20" r="2.4" fill="url(#g-signal)"/><circle cx="30.4" cy="28.5" r="2.8" fill="url(#g-signal)"/>'
-        f'<circle cx="31.4" cy="36.5" r="3.1" fill="url(#g-signal)"/>' +
+        '<circle cx="31.4" cy="36.5" r="3.1" fill="url(#g-signal)"/>' +
         f'<path d="M23 {C[1] + 1.5}Q31 {C[1] - 6} 39 {C[1] + 1.5}" stroke="url(#g-signal)" {_ST}/>', "Debris flow"),
     "no_landslide": _svg(_hill(), "No landslide visible"),
     "bad_photo": _svg(
@@ -241,7 +242,8 @@ function loading(){setChip('','Analysing…',true);
 function fail(msg){setChip('bad','Error');
  out.innerHTML=`<section class="card bad" role="alert"><div class="kicker">Something went wrong</div><h2>${esc(msg)}</h2><p class="hungr" style="margin:0">Check the connection to the laptop running the app, then try again.</p></section>`;}
 // photo pick -> the guidance layer (src/guide.py) runs the photo check, upload, progress and next steps
-function go(e){const f=e.target.files[0];if(!f)return;e.target.value='';App.onPick(f,e.target.id==='cam')}
+function go(e){const fs=[...e.target.files];if(!fs.length)return;e.target.value='';const cam=e.target.id==='cam';
+ if(App.onPicks&&App.onPicks(fs,cam))return;App.onPick(fs[0],cam)}
 document.getElementById('cam').onchange=go;document.getElementById('gal').onchange=go;
 window.App={D,esc,render,fail,setChip,shrink,dims,onPick:null};
 const demo=new URLSearchParams(location.search).get('demo');
@@ -256,7 +258,7 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <link rel="icon" type="image/png" sizes="48x48" href="favicon.ico">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="theme-color" content="#0e4d45">
-<style>__CSS____GCSS__.drow{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid rgba(127,127,127,.18);font-size:14px}.drow b{text-align:right;font-weight:600}.drow small{opacity:.65;font-weight:400}.dimg{width:100%;border-radius:10px;margin:10px 0}.dist{display:block;margin-top:14px;font-size:13px;opacity:.85}.dist input{display:block;width:100%;margin-top:6px;padding:10px;border-radius:10px;border:1px solid rgba(127,127,127,.4);font:inherit;background:transparent;color:inherit}
+<style>__CSS____GCSS____PCSS__.drow{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid rgba(127,127,127,.18);font-size:14px}.drow b{text-align:right;font-weight:600}.drow small{opacity:.65;font-weight:400}.dimg{width:100%;border-radius:10px;margin:10px 0}.dist{display:block;margin-top:14px;font-size:13px;opacity:.85}.dist input{display:block;width:100%;margin-top:6px;padding:10px;border-radius:10px;border:1px solid rgba(127,127,127,.4);font:inherit;background:transparent;color:inherit}
 </style></head><body>__DEFS__<main>
 <header><div class="logo">__LOGO__</div><div class="brand"><b>Landslide Type Check</b><span>Field classifier &middot; Hungr 2014</span></div><button type="button" id="helpBtn" class="iconbtn" aria-label="Help and guide">?</button><button type="button" id="langBtn" class="iconbtn langbtn" aria-label="Language: English or Hindi">हिं</button></header>
 <div id="netbar" class="netbar" role="status" hidden>You are offline. Photos cannot be analysed until the connection is back.</div>
@@ -276,7 +278,7 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <div id="history"></div>
 <p class="foot">Decision support only &mdash; confirm with a geologist or geotechnical engineer before acting.<br>
 Classification after Hungr, Leroueil &amp; Picarelli (2014).</p>
-</main><script>__JS__</script><script>__GJS__</script></body></html>"""
+</main><script>__JS__</script><script>__PJS__</script><script>__GJS__</script></body></html>"""
 
 
 def build_page(logo_svg, info, names, tips, confident_min):
@@ -306,12 +308,12 @@ def build_page(logo_svg, info, names, tips, confident_min):
         "bad": {"status": "bad_photo", "usable": .12, "label": "no_landslide", "family": None, "confidence": .5,
                 "ranked": top("no_landslide", .5), "model": "demo", "ms": 0},
     }
-    data = {"guide": guide.data(), "glyphs": GLYPHS, "icons": UI_ICONS, "info": info, "names": names, "tips": tips,
+    data = {"guide": guide.data(), "pano": pano.data(), "glyphs": GLYPHS, "icons": UI_ICONS, "info": info, "names": names, "tips": tips,
             "families": {"flow": "Flow-type landslide", "slide": "Slide (rotational or translational)"},
             "familyGlyph": FAMILY_GLYPH, "conf": confident_min, "samples": samples}
     page = PAGE.replace("__CSS__", CSS).replace("__DEFS__", DEFS).replace("__LOGO__", logo_svg)
     for k, v in UI_ICONS.items():
         page = page.replace(f"__I_{k}__", v.replace("<svg", '<svg class="ico"'))
     # JSON inside <script>: escape "</" so no string can close the script element
-    page = page.replace("__GCSS__", guide.CSS).replace("__GJS__", guide.JS)
+    page = page.replace("__GCSS__", guide.CSS).replace("__GJS__", guide.JS).replace("__PCSS__", pano.CSS).replace("__PJS__", pano.JS)
     return page.replace("__JS__", JS.replace("__DATA__", json.dumps(data).replace("</", "<\\/")))

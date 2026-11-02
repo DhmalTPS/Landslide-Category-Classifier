@@ -298,4 +298,7 @@ HI = {
     'from': 'या',
     'and': 'और',
     '(second choice)': '(दूसरा विकल्प)',
+    # overlapping photo sets (src/pano.py has its own English/Hindi text)
+    'Overlapping set': 'ओवरलैप सेट',
+    'Cover the slope with overlapping photos': 'ओवरलैप करती फ़ोटो से पूरी ढलान लें',
 }
