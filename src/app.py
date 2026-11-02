@@ -324,30 +324,35 @@ def make_handler(pred, vlm, save, max_saved=2000, token=None, dim=None):
 
         def _walk_scale(self, st, ex, rep):
             """Walk-along set + steps walked between photos (?steps=, ?stride= m, default 0.75): triangulate the
-            central photo against its neighbours in walking order -> metric points for the size step."""
+            central photo against the photos it is linked to with camera motion ("moved") -> metric points.
+            Returns (kw for the size step, tried). The size step must use the SAME focal as the triangulation
+            (depth scales with it, so the focal error cancels in sizes): kw carries f35 + its source and sd."""
             try:
                 steps = float(self._q("steps") or 0)
                 stride = float(self._q("stride") or 0.75)
             except ValueError:
-                return {}
-            if not (0 < steps <= 50 and 0.3 <= stride <= 1.5):
-                return {}
-            c, order = ex["central"], list(rep.get("order") or ex["main"])
-            if c not in order:
-                return {}
-            img = st["imgs"][c]
-            f35 = (st["f35"][c] if c < len(st["f35"]) else None) or None
-            f_px = (f35 or overlap.DEFAULT_F35) / 36 * max(img.size)
-            xy, z, used = [], [], []
-            k = order.index(c)
-            for j in (k - 1, k + 1):
-                if 0 <= j < len(order):
-                    sp = overlap.stereo_points(img, st["imgs"][order[j]], f_px, steps * stride)
-                    if sp:
-                        xy += sp["xy"]; z += sp["z"]; used.append(order[j])
+                return {}, False
+            if ex["mosaic"] is not None or not (0 < steps <= 50 and 0.3 <= stride <= 1.5):
+                return {}, False
+            c = ex["central"]
+            nb = [l["b"] if l["a"] == c else l["a"] for l in rep.get("links", [])
+                  if c in (l["a"], l["b"]) and l.get("motion") == "moved"]
+            if not nb:
+                return {}, True
+            img, raw = st["imgs"][c], st["raws"][c]
+            f35 = (st["f35"][c] if c < len(st["f35"]) else None) or self._f35() or focal_35mm(raw)
+            src = "EXIF" if f35 else "typical phone camera"
+            f35 = f35 or overlap.DEFAULT_F35
+            f_px = f35 / 36 * max(img.size)
+            xy, z, used, sds = [], [], [], []
+            for j in nb[:2]:
+                sp = overlap.stereo_points(img, st["imgs"][j], f_px, steps * stride)
+                if sp:
+                    xy += sp["xy"]; z += sp["z"]; used.append(j); sds.append(sp["log_sd"])
             if len(z) < 8:
-                return {}
-            return {"metric_points": {"xy": xy, "z": z, "log_sd": 0.15, "n": len(z), "pairs": used}}
+                return {}, True
+            return {"metric_points": {"xy": xy, "z": z, "log_sd": max(sds), "n": len(z), "pairs": used},
+                    "f35": f35, "focal_src": src, "focal_sd": overlap.focal_sd(src, 2)}, True
 
         def _pano(self):
             """Type for a checked set (joined picture + single photos), then sizes via /measure?job=."""
@@ -357,6 +362,7 @@ def make_handler(pred, vlm, save, max_saved=2000, token=None, dim=None):
             ex, rep = st["ex"], st["rep"]
             main = ex["main"]
             t0 = time.time()
+            walk_kw, walk_tried = self._walk_scale(st, ex, rep)    # CPU only: outside the GPU lock
             with lock:
                 batch = [st["imgs"][i] for i in main] + ([ex["mosaic"]] if ex["mosaic"] is not None else [])
                 res = pred(batch)
@@ -380,8 +386,11 @@ def make_handler(pred, vlm, save, max_saved=2000, token=None, dim=None):
                                        for i, s in zip(main, singles)],
                             "joined_type": ({"label": rm["label"], "confidence": round(rm["confidence"], 3)} if rm else None)}
                 # a joined picture's focal is not this photo's EXIF: pass its measured uncertainty and source
-                kw = self._walk_scale(st, ex, rep) if ex["mosaic"] is None else                     {"focal_sd": rep["focal_sd"], "focal_src": rep["focal_source"]}
-                r["set"]["steps_given"] = bool(self._q("steps"))
+                kw = dict(walk_kw) if ex["mosaic"] is None else \
+                    {"focal_sd": rep["focal_sd"], "focal_src": rep["focal_source"]}
+                if "f35" in kw:          # triangulated with this focal -> sizes use the same one
+                    f35 = kw.pop("f35")
+                r["set"]["steps_given"] = walk_tried
                 if kw.get("metric_points"):
                     r["set"]["stereo_points"] = kw["metric_points"]["n"]
                     r["set"]["stereo_pairs"] = len(kw["metric_points"]["pairs"])

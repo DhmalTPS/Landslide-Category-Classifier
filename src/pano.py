@@ -392,13 +392,14 @@ function sharp(src){const w0=src.videoWidth||src.width,h0=src.videoHeight||src.h
 function pickKeys(fr,kind,max){const n=fr.length;if(!n)return [];const B=P.bands[kind],lo=B.ideal[0],hi=B.ideal[1];
  const sh=fr.map(f=>f.sharp).sort((a,b)=>a-b),med=sh[Math.floor(n/2)]||0,ok=f=>f.sharp>=.5*med;
  let first=0;for(let i=1;i<Math.min(n,4);i++)if(fr[i].sharp>fr[first].sharp)first=i;
- const keys=[first];let last=first,cand=-1,blur=-1,prev=-1;
- const ovOf=i=>{const e=match(fr[last].sig,fr[i].sig);return e&&!e.orient&&e.score>.3?e.ov:0};
- for(let i=first+1;i<n&&keys.length<max;i++){const ov=ovOf(i);
+ const keys=[first];let last=first,cand=-1,blur=-1,prev=-1,miss=0;
+ const ovOf=i=>{const e=match(fr[last].sig,fr[i].sig);return e&&!e.orient&&e.score>.3?e.ov:-1};
+ for(let i=first+1;i<n&&keys.length<max;i++){let ov=ovOf(i);
+  if(ov<0){if(++miss<3)continue;ov=0}else miss=0;   // one failed match (blur, occlusion) is not "overlap too small"
   if(ov>hi){prev=i;continue}
   if(ov>=lo){if(ok(fr[i])){if(cand<0||fr[i].sharp>fr[cand].sharp)cand=i}else if(blur<0||fr[i].sharp>fr[blur].sharp)blur=i;continue}
-  const k=cand>=0?cand:blur>=0?blur:prev>last?prev:i;keys.push(k);last=k;cand=blur=prev=-1;i=k}
- if(keys.length<max){const k=cand>=0?cand:blur;if(k>last)keys.push(k);else for(let i=n-1;i>last;i--)if(ok(fr[i])){if(ovOf(i)<B.dup)keys.push(i);break}}   // keep the (sharp) end of the sweep unless it adds nothing
+  const k=cand>=0?cand:blur>=0?blur:prev>last?prev:i;keys.push(k);last=k;cand=blur=prev=-1;miss=0;i=k}
+ if(keys.length<max){const k=cand>=0?cand:blur;if(k>last)keys.push(k);else for(let i=n-1;i>last;i--)if(ok(fr[i])){const o=ovOf(i);if(o>=0&&o<B.dup)keys.push(i);break}}   // keep the (sharp) end of the sweep unless it adds nothing
  return keys}
 const seek=(v,t)=>new Promise(r=>{const to=setTimeout(r,4000);v.onseeked=()=>{clearTimeout(to);r()};v.currentTime=t});
 async function fromVideo(file){const st=$('#pano .pstat'),room=Math.max(0,P.max-S.items.length);if(!room){g.toast(L('max',{n:P.max}));return}
@@ -410,9 +411,9 @@ async function fromVideo(file){const st=$('#pano .pstat'),room=Math.max(0,P.max-
   const keys=pickKeys(fr.filter(f=>f.sig),S.kind,room),F=fr.filter(f=>f.sig);
   if(keys.length<2){g.toast(L('vid_few',{n:keys.length}));render();return}
   const s=Math.min(1,1600/Math.max(v.videoWidth,v.videoHeight)),c=document.createElement('canvas');c.width=Math.round(v.videoWidth*s);c.height=Math.round(v.videoHeight*s);
-  S.vidT=T;
+  S.vidT=T;const vid=nid;
   for(const k of keys){await seek(v,F[k].t);c.getContext('2d').drawImage(v,0,0,c.width,c.height);
-   const b=await new Promise(r=>c.toBlob(r,'image/jpeg',.92));const it=await add(b,null,'vid',c);if(it)it.vt=F[k].t}
+   const b=await new Promise(r=>c.toBlob(r,'image/jpeg',.92));const it=await add(b,null,'vid',c);if(it){it.vt=F[k].t;it.vid=vid}}
   drawGuide();g.toast(L('vid_done',{n:keys.length}));g.say(L('vid_done',{n:keys.length}))}
  catch(_){g.toast(L('vid_fail'));render()}
  finally{URL.revokeObjectURL(url)}}
@@ -445,7 +446,8 @@ function drawGuide(){const gd=$('.pgide');gd.querySelectorAll('[data-k]').forEac
  gd.querySelectorAll('.pdiag text[class^=t-]').forEach(t=>{t.textContent=L(t.getAttribute('class').replace('-','_'))});
  gd.querySelector('.prules').innerHTML=L('rules_'+S.kind).map(r=>`<li>${esc(r)}</li>`).join('');
  gd.querySelector('.psteps').hidden=S.kind!=='walk';gd.querySelector('.pstq').textContent=L(vidTimes().length>1?'steps_q_vid':'steps_q')}
-const vidTimes=()=>S.items.filter(i=>i.vt!=null).map(i=>i.vt);
+// video timing counts only when every photo of the set comes from the same video
+const vidTimes=()=>{const it=S.items;return it.length>1&&it.every(i=>i.vt!=null&&i.vid===it[0].vid)?it.map(i=>i.vt):[]};
 // steps between neighbouring photos; for a video the number typed is the total for the whole video, so a pair
 // gets total x (mean time between picked frames) / video length (steady walking pace assumed)
 function steps(){const v=+($('.pgide .psteps input')?.value||0),t=vidTimes();if(S.kind!=='walk'||!(v>0))return null;
@@ -579,7 +581,9 @@ function perPhoto(r,items,r0){const N=A.D.names,top=r.label,rows=[];
 
 A.f35Of=f35Of;   // also used by single photos (src/guide.py): the shrunk upload has no EXIF
 A.pano={show(on){want=on;if(ready)apply()},init(){g=A._g;D=A.D;P=D.pano;esc=A.esc;lang=g.store.get('lang','en');S.kind=g.store.get('pkind','turn');
-  build();ready=true;apply();A.onPicks=onPicks},
+  build();ready=true;apply();
+  // ui.js treats any truthy return as handled: return false synchronously outside set mode (a Promise is truthy)
+  A.onPicks=(f,c)=>g.mode()==='pano'?onPicks(f,c):false},
  label(){return L('label_turn',{k:S.items.length+1})},hint(){return S.items.length?(S.kind==='turn'?L('next_turn',{d:L((S.dir||1)<0?'left':'right')}):L('next_walk')):L(S.kind==='turn'?'hint_first_turn':'hint_first_walk')},
  finder,tick,shot,gx(){return `${S.kind}:${S.items.length}:${S.rep?S.rep.verdict:'-'}:${S.items.filter(i=>i.src==='cam').length}`},
  _S:S,_match:match,_sig:sig,_add:add,_check:check,_join:join,_pick:pickKeys,_sharp:sharp,_video:fromVideo,_steps:steps};

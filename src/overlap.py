@@ -60,7 +60,8 @@ def config():
 CFG = config()
 # log-sd of the focal length by source; "joined photos" measured on simulated turning sets (tools/focal_eval.py,
 # train RMS incl. bias; val 90 % coverage in src/focal_check.json)
-FOCAL_SD = {"EXIF": 0.02, "typical phone camera": 0.25, "joined photos": {"2": 0.25, "3": 0.25}}
+FOCAL_SD = {"EXIF": 0.02, "typical phone camera": 0.25,      # same values as dimension.FOCAL_SD (keep in step)
+            "joined photos": {"2": 0.25, "3": 0.25}}
 try:
     FOCAL_SD["joined photos"].update(json.loads(Path(__file__).with_name("focal_check.json").read_text())["focal_sd"])
 except (OSError, ValueError, KeyError):
@@ -221,8 +222,17 @@ def stereo_points(ref, other, f_px, baseline_m, baseline_sd=0.15, min_angle_deg=
     if len(m) < 20 or not baseline_m or baseline_m <= 0:
         return None
     p, q = kr[m[:, 0]].astype(np.float64), fo[2][m[:, 1]].astype(np.float64)
-    fs = f_px * s
-    K = np.array([[fs, 0, w / 2], [0, fs, h / 2], [0, 0, 1.0]])
+    # each photo its own intrinsics (sizes/orientation may differ): same 35 mm-equivalent focal, centre point
+    fs1 = f_px * s
+    fs2 = f_px * max(other.size) / max(ref.size) * fo[1]
+    h2, w2 = fo[0].shape
+    # map the other photo's points into the ref camera's pixel frame (q' = K1 K2^-1 q): one K, pixel-unit
+    # thresholds for MAGSAC (it is unstable with tiny normalised thresholds)
+    q = (q - [w2 / 2, h2 / 2]) * (fs1 / fs2) + [w / 2, h / 2]
+    K = np.array([[fs1, 0, w / 2], [0, fs1, h / 2], [0, 0, 1.0]])
+    pn = (p - [w / 2, h / 2]) / fs1
+    qn = (q - [w / 2, h / 2]) / fs1
+    I3 = np.eye(3)
     try:
         E, em = cv2.findEssentialMat(p, q, K, cv2.USAC_MAGSAC, 0.999, 1.0)
         if E is None or E.shape != (3, 3):
@@ -233,9 +243,9 @@ def stereo_points(ref, other, f_px, baseline_m, baseline_sd=0.15, min_angle_deg=
     inl = pm.ravel() > 0
     if inl.sum() < 20:
         return None
-    P1 = K @ np.hstack([np.eye(3), np.zeros((3, 1))])
-    P2 = K @ np.hstack([R, t])
-    X = cv2.triangulatePoints(P1, P2, p[inl].T, q[inl].T)
+    P1 = np.hstack([I3, np.zeros((3, 1))])
+    P2 = np.hstack([R, t])
+    X = cv2.triangulatePoints(P1, P2, pn[inl].T, qn[inl].T)
     X = (X[:3] / X[3]).T                                   # in ref camera, baseline units (|t| = 1)
     X2 = (R @ X.T + t).T
     c2 = (-R.T @ t).ravel()                                # other camera centre in ref frame
@@ -245,7 +255,8 @@ def stereo_points(ref, other, f_px, baseline_m, baseline_sd=0.15, min_angle_deg=
     def proj(P, Y):
         u = (P @ np.hstack([Y, np.ones((len(Y), 1))]).T).T
         return u[:, :2] / u[:, 2:3]
-    err = np.maximum(np.linalg.norm(proj(P1, X) - p[inl], axis=1), np.linalg.norm(proj(P2, X) - q[inl], axis=1))
+    err = np.maximum(np.linalg.norm(proj(P1, X) - pn[inl], axis=1) * fs1,        # in pixels of each photo
+                     np.linalg.norm(proj(P2, X) - qn[inl], axis=1) * fs2)
     keep = (X[:, 2] > 0) & (X2[:, 2] > 0) & (err < 2.0) & (ang > min_angle_deg)
     if keep.sum() < 8:
         return None
