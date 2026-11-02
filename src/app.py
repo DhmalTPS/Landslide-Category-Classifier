@@ -322,6 +322,33 @@ def make_handler(pred, vlm, save, max_saved=2000, token=None, dim=None):
             print(f"{datetime.now():%H:%M:%S} overlap    {len(imgs)} photos {rep['detected']} {rep['verdict']} ({rep['ms']} ms)")
             return self._json(200, rep)
 
+        def _walk_scale(self, st, ex, rep):
+            """Walk-along set + steps walked between photos (?steps=, ?stride= m, default 0.75): triangulate the
+            central photo against its neighbours in walking order -> metric points for the size step."""
+            try:
+                steps = float(self._q("steps") or 0)
+                stride = float(self._q("stride") or 0.75)
+            except ValueError:
+                return {}
+            if not (0 < steps <= 50 and 0.3 <= stride <= 1.5):
+                return {}
+            c, order = ex["central"], list(rep.get("order") or ex["main"])
+            if c not in order:
+                return {}
+            img = st["imgs"][c]
+            f35 = (st["f35"][c] if c < len(st["f35"]) else None) or None
+            f_px = (f35 or overlap.DEFAULT_F35) / 36 * max(img.size)
+            xy, z, used = [], [], []
+            k = order.index(c)
+            for j in (k - 1, k + 1):
+                if 0 <= j < len(order):
+                    sp = overlap.stereo_points(img, st["imgs"][order[j]], f_px, steps * stride)
+                    if sp:
+                        xy += sp["xy"]; z += sp["z"]; used.append(order[j])
+            if len(z) < 8:
+                return {}
+            return {"metric_points": {"xy": xy, "z": z, "log_sd": 0.15, "n": len(z), "pairs": used}}
+
         def _pano(self):
             """Type for a checked set (joined picture + single photos), then sizes via /measure?job=."""
             st = sets.get(self._q("set"))
@@ -352,10 +379,15 @@ def make_handler(pred, vlm, save, max_saved=2000, token=None, dim=None):
                             "photos": [{"i": i, "label": s["label"], "confidence": round(s["confidence"], 3)}
                                        for i, s in zip(main, singles)],
                             "joined_type": ({"label": rm["label"], "confidence": round(rm["confidence"], 3)} if rm else None)}
+                kw = self._walk_scale(st, ex, rep) if ex["mosaic"] is None else {}
+                r["set"]["steps_given"] = bool(self._q("steps"))
+                if kw.get("metric_points"):
+                    r["set"]["stereo_points"] = kw["metric_points"]["n"]
+                    r["set"]["stereo_pairs"] = len(kw["metric_points"]["pairs"])
                 r["measurable"] = bool(dim) and r["status"] != "bad_photo"
                 if r["measurable"]:
                     r["job"] = uuid.uuid4().hex[:16]
-                    jobs[r["job"]] = (img, raw, {k: r.get(k) for k in ("label", "ranked", "status", "family")}, f35)
+                    jobs[r["job"]] = (img, raw, {k: r.get(k) for k in ("label", "ranked", "status", "family")}, f35, kw)
                     while len(jobs) > MAX_JOBS:
                         jobs.popitem(last=False)
                 r.update(ms=int((time.time() - t0) * 1000), names=names, info=INFO, tips=PHOTO_TIPS)
@@ -404,7 +436,7 @@ def make_handler(pred, vlm, save, max_saved=2000, token=None, dim=None):
                         return self._json(410, {"error": "the photo is no longer on the server; sending it again"})
                     t0 = time.time()
                     try:
-                        d = self._measure(*job)
+                        d = self._measure(*job[:4], **(job[4] if len(job) > 4 else {}))
                     except Exception as e:
                         print(f"measuring failed: {e!r}")
                         return self._json(500, {"error": "the size estimate failed on this photo; try again"})

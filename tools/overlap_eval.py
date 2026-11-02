@@ -19,6 +19,7 @@ Usage: python tools/overlap_eval.py [--n-train 120] [--n-val 150] [--no-type]
 Writes results/overlap_eval.md and src/overlap_check.json.
 """
 import argparse
+import hashlib
 import json
 import math
 import random
@@ -43,7 +44,8 @@ BUDGET = 1e9                                     # seconds per call; set by --bu
 def seed(key):
     """Per-item random stream, so a resumed run draws exactly what an uninterrupted one would."""
     global rng
-    rng = np.random.default_rng(int.from_bytes(str(key).encode()[:16].ljust(16, b"0"), "little") % (2 ** 63))
+    # full hash of the key (ids share long prefixes like 'commons_', so truncating the key repeats streams)
+    rng = np.random.default_rng(int.from_bytes(hashlib.sha256(str(key).encode()).digest()[:8], "little"))
 
 
 def over_budget():

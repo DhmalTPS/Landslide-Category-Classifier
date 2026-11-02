@@ -192,6 +192,53 @@ def pair(fa, fb):
     return res
 
 
+def stereo_points(ref, other, f_px, baseline_m, baseline_sd=0.15, min_angle_deg=1.0):
+    """Metric 3-D points of a walk-along pair (camera moved between the photos), seen from `ref`.
+    Essential matrix (MAGSAC++) with K from the focal length, pose by cheirality (recoverPose), linear
+    triangulation; the unit-length translation is scaled by the walked distance between the two camera
+    positions (baseline_m = steps x stride). Kept points: in front of both cameras, reprojection < 2 px,
+    ray angle > min_angle_deg (smaller angles give noise-dominated depth).
+    Returns {"xy": N x 2 pixel coords in ref (full resolution), "z": N metric depths in the ref camera,
+    "log_sd": baseline_sd, "n": N, "angle_med": deg, "inliers": E inliers} or None."""
+    fr, fo = features(ref), features(other)
+    g, s, kr, dr = fr
+    h, w = g.shape
+    m = _match(dr, fo[3])
+    if len(m) < 20 or not baseline_m or baseline_m <= 0:
+        return None
+    p, q = kr[m[:, 0]].astype(np.float64), fo[2][m[:, 1]].astype(np.float64)
+    fs = f_px * s
+    K = np.array([[fs, 0, w / 2], [0, fs, h / 2], [0, 0, 1.0]])
+    try:
+        E, em = cv2.findEssentialMat(p, q, K, cv2.USAC_MAGSAC, 0.999, 1.0)
+        if E is None or E.shape != (3, 3):
+            return None
+        _, R, t, pm = cv2.recoverPose(E, p, q, K, mask=em.copy())
+    except cv2.error:
+        return None
+    inl = pm.ravel() > 0
+    if inl.sum() < 20:
+        return None
+    P1 = K @ np.hstack([np.eye(3), np.zeros((3, 1))])
+    P2 = K @ np.hstack([R, t])
+    X = cv2.triangulatePoints(P1, P2, p[inl].T, q[inl].T)
+    X = (X[:3] / X[3]).T                                   # in ref camera, baseline units (|t| = 1)
+    X2 = (R @ X.T + t).T
+    c2 = (-R.T @ t).ravel()                                # other camera centre in ref frame
+    r1, r2 = X, X - c2
+    ang = np.degrees(np.arccos(np.clip((r1 * r2).sum(1) / (np.linalg.norm(r1, axis=1) * np.linalg.norm(r2, axis=1) + 1e-12), -1, 1)))
+
+    def proj(P, Y):
+        u = (P @ np.hstack([Y, np.ones((len(Y), 1))]).T).T
+        return u[:, :2] / u[:, 2:3]
+    err = np.maximum(np.linalg.norm(proj(P1, X) - p[inl], axis=1), np.linalg.norm(proj(P2, X) - q[inl], axis=1))
+    keep = (X[:, 2] > 0) & (X2[:, 2] > 0) & (err < 2.0) & (ang > min_angle_deg)
+    if keep.sum() < 8:
+        return None
+    return {"xy": (p[inl][keep] / s).tolist(), "z": (X[keep, 2] * baseline_m).tolist(), "log_sd": float(baseline_sd),
+            "n": int(keep.sum()), "angle_med": float(np.median(ang[keep])), "inliers": int(inl.sum())}
+
+
 def _components(n, links):
     parent = list(range(n))
 

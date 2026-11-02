@@ -117,6 +117,12 @@ TEXT = {
     "t_turn1": ["stand still", "एक जगह रुकें"], "t_turn2": ["turn the phone", "फ़ोन घुमाएँ"],
     "t_third": ["~1/3 shared", "~1/3 साझा"],
     "t_walk1": ["walk along, every 3-5 steps", "साथ चलें, हर 3-5 कदम"], "t_walk2": ["same distance", "समान दूरी"],
+    "steps_q": ["Normal steps between photos (gives real size; leave empty if unsure)",
+                "फ़ोटो के बीच सामान्य कदम (असली माप देता है; पता न हो तो खाली छोड़ें)"],
+    "stereo_ok": ["Real size from your walk: {n} points measured from {p} photo pairs.",
+                  "आपके चलने से असली माप: {p} फ़ोटो जोड़ों से {n} बिंदु मापे गए।"],
+    "stereo_no": ["Walk distance given, but the photos did not give a reliable 3D scale (too far or too little texture).",
+                  "चलने की दूरी दी गई, पर फ़ोटो से भरोसेमंद 3D माप नहीं मिला (बहुत दूर या कम बनावट)।"],
     "rules_turn": [["Stand in one safe spot. Turn your body and phone; do not walk between photos.",
                     "Start a little beyond one end of the landslide and finish a little beyond the other end.",
                     "Each new photo should repeat about one third of the last one (the ghost on screen helps).",
@@ -246,7 +252,7 @@ TEXT = {
 
 
 CSS = """
-#pano[hidden],.pgide[hidden],.tips[hidden]{display:none}
+#pano[hidden],.pgide[hidden],.tips[hidden],.psteps[hidden]{display:none}
 .pgide{margin:0 0 12px}.pgide .pk{margin-bottom:10px}
 .pil{max-height:170px}.pil .cone{fill:var(--teal-400);fill-opacity:.16;stroke:var(--teal-400);stroke-width:1.2}
 .ovg{fill:var(--teal-400);fill-opacity:.38}.ovr{fill:var(--ruby);fill-opacity:.28}.ovb{fill:#5b8def;fill-opacity:.3}
@@ -371,19 +377,23 @@ function build(){const card=$('#capH').closest('.card');
  card.querySelector('#shots').insertAdjacentHTML('afterend',`<div class="pgide" hidden><div class="seg pk" role="group" aria-label="${esc(L('mode_turn'))} / ${esc(L('mode_walk'))}">
   <button type="button" data-k="turn">${esc(L('mode_turn'))}</button><button type="button" data-k="walk">${esc(L('mode_walk'))}</button></div>
   <p class="pintro hungr" style="margin:0 0 6px"></p><div class="pdiag"></div><ol class="prules"></ol>
+  <label class="psteps hungr" style="display:block;margin:0 0 8px">${esc(L('steps_q'))} <input type="number" inputmode="numeric" min="1" max="50" step="1" style="width:4.5em"></label>
   <button type="button" class="minibtn" data-a="examples">${esc(L('examples'))}</button></div>`);
  card.querySelector('.btns').insertAdjacentHTML('afterend',`<div id="pano" hidden><div class="tray" aria-live="polite"></div><p class="pstat"></p>
   <div class="row" style="margin:0 0 6px"><button type="button" class="btn primary" data-a="check" disabled>${esc(L('check'))}</button><button type="button" class="minibtn" data-a="clear">${esc(L('clear'))}</button></div></div>`);
  const gd=card.querySelector('.pgide');
  gd.addEventListener('click',e=>{const k=e.target.closest('[data-k]')?.dataset.k;if(k){S.kind=k;g.store.set('pkind',k);S.rep=null;$('#ovcard')?.remove();drawGuide();render()}
   if(e.target.dataset.a==='examples')examples()});
+ const si=gd.querySelector('.psteps input');si.value=g.store.get('psteps','');si.addEventListener('change',()=>g.store.set('psteps',si.value));
  $('#pano').addEventListener('click',e=>{const a=e.target.closest('[data-a]')?.dataset.a,x=e.target.closest('.px');
   if(x){remove(+x.dataset.id);return}if(a==='check')check();if(a==='clear')clearSet()})}
 function drawGuide(){const gd=$('.pgide');gd.querySelectorAll('[data-k]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.k===S.kind));
  gd.querySelector('.pintro').textContent=L('intro_'+S.kind);
  gd.querySelector('.pdiag').innerHTML=S.kind==='turn'?P.svg.turn+P.svg.strip:P.svg.walk;
  gd.querySelectorAll('.pdiag text[class^=t-]').forEach(t=>{t.textContent=L(t.getAttribute('class').replace('-','_'))});
- gd.querySelector('.prules').innerHTML=L('rules_'+S.kind).map(r=>`<li>${esc(r)}</li>`).join('')}
+ gd.querySelector('.prules').innerHTML=L('rules_'+S.kind).map(r=>`<li>${esc(r)}</li>`).join('');
+ gd.querySelector('.psteps').hidden=S.kind!=='walk'}
+function steps(){const v=+($('.pgide .psteps input')?.value||0);return S.kind==='walk'&&v>0&&v<=50?Math.round(v):null}
 function examples(){const m=$('#mTour');m.firstElementChild.innerHTML=`<div class="row" style="margin:0"><h2 id="tourT" style="margin:0">${esc(L('ex_title'))}</h2><button type="button" class="minibtn" data-a="x" data-f>${esc(L('close'))}</button></div>
  <div class="exgrid">${P.examples.map(([k,ok,svg])=>`<div class="excard ${ok?'ok':'no'}">${svg}<b>${ok?'&#10003;':'&#10005;'}</b>${esc(L('ex_'+k))}</div>`).join('')}</div>`;
  m.hidden=false;m.querySelector('[data-f]').focus();m.onclick=e=>{if(e.target===m||e.target.dataset.a==='x')m.hidden=true}}
@@ -493,7 +503,8 @@ function report(r){const out=g.out,n=S.items.length,ICO=g.ICO,B=r.bands,vt={read
 /* ---------- join and analyse: one answer for the set through the normal result page ---------- */
 function join(retry){const r0=S.rep;if(!r0)return;g.busy(L('joining'));
  const pg=g.prog($('#pg'),[[0,L('st_join')],[.3,L('st_type')]],g.store.get('etaT',4000)+2000,false);
- g.post('pano?'+g.params({set:r0.set,gx:g.gx()}),null,pg,{
+ const q={set:r0.set,gx:g.gx()},st=steps();if(st)q.steps=st;
+ g.post('pano?'+g.params(q),null,pg,{
   ok:async r=>{const items=S.items.slice(),ref=items[r0._map[r.ref]]||items[0];
    const blob=r.image?await urlBlob(r.image):ref.blob,label=L(r.set.joined?'set_label_j':'set_label_w',{n:r.set.n});
    g.runSet(r,blob,ref.g,label);perPhoto(r,items,r0)},
@@ -505,7 +516,8 @@ function perPhoto(r,items,r0){const N=A.D.names,top=r.label,rows=[];
  r.set.photos.forEach(p=>{const k=r0._map[p.i];rows.push({img:items[k]?.thumb,t:L('per_photo',{k:k+1}),lab:p.label,c:p.confidence})});
  const agree=rows.filter(x=>x.lab===top).length;
  const html=`<section class="card" id="percard"><div class="kicker">${esc(L('per_h'))}</div><p class="hungr" style="margin:2px 0 4px">${esc(L('per_note'))}</p>
-  <p style="margin:0"><b>${esc(L('agree',{a:agree,n:rows.length}))}</b></p><div class="perset">${rows.map(x=>`<div><img src="${x.img||''}" alt=""><p><b>${esc(x.t)}</b><br><span class="${x.lab===top?'agree':'dis'}">${esc(N[x.lab]||x.lab)} ${pct(x.c)}%</span></p></div>`).join('')}</div></section>`;
+  <p style="margin:0"><b>${esc(L('agree',{a:agree,n:rows.length}))}</b></p>
+  ${r.set.stereo_points?`<p class="hungr" style="margin:4px 0 0">${esc(L('stereo_ok',{n:r.set.stereo_points,p:r.set.stereo_pairs||1}))}</p>`:(r.set.steps_given?`<p class="hungr" style="margin:4px 0 0">${esc(L('stereo_no'))}</p>`:'')}<div class="perset">${rows.map(x=>`<div><img src="${x.img||''}" alt=""><p><b>${esc(x.t)}</b><br><span class="${x.lab===top?'agree':'dis'}">${esc(N[x.lab]||x.lab)} ${pct(x.c)}%</span></p></div>`).join('')}</div></section>`;
  const anchor=g.out.querySelector('.card.result')||g.out.firstElementChild;if(anchor)anchor.insertAdjacentHTML('afterend',html)}
 
 A.f35Of=f35Of;   // also used by single photos (src/guide.py): the shrunk upload has no EXIF
