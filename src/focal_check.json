@@ -1,0 +1,14 @@
+{
+ "focal_sd": {
+  "2": 0.145,
+  "3": 0.161
+ },
+ "val_coverage_90": {
+  "2": 0.9333333333333333,
+  "3": 0.9833333333333333
+ },
+ "n_train": 120,
+ "n_val": 120,
+ "split": "train fits sd, val checks coverage; simulated turning sets",
+ "made_by": "tools/focal_eval.py"
+}

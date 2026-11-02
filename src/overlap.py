@@ -58,6 +58,20 @@ def config():
 
 
 CFG = config()
+# log-sd of the focal length by source; "joined photos" measured on simulated turning sets (tools/focal_eval.py,
+# train RMS incl. bias; val 90 % coverage in src/focal_check.json)
+FOCAL_SD = {"EXIF": 0.02, "typical phone camera": 0.25, "joined photos": {"2": 0.25, "3": 0.25}}
+try:
+    FOCAL_SD["joined photos"].update(json.loads(Path(__file__).with_name("focal_check.json").read_text())["focal_sd"])
+except (OSError, ValueError, KeyError):
+    pass
+
+
+def focal_sd(src, n):
+    v = FOCAL_SD.get(src, 0.25)
+    return float(v[str(min(max(n, 2), 3))]) if isinstance(v, dict) else float(v)
+
+
 _sift = None
 
 
@@ -571,6 +585,7 @@ def analyse(images, kind="turn", f35=None, stitch=True):
         "pairs": [{"a": i, "b": j, "overlap": round(p["overlap"], 3), "inliers": p["inliers"]}
                   for (i, j), p in pairs.items() if p["inliers"] >= 12],
         "bands": B, "focal_source": f_src, "focal_35mm": round(f_px / max(W, Hh) * 36, 1),
+        "focal_sd": round(focal_sd(f_src, len(main)), 3),
         "span_deg": out_m["span_deg"] if out_m else None, "valid": round(out_m["valid"], 3) if out_m else None,
         "preview": prev, "ms": int((time.time() - t0) * 1000),
     }

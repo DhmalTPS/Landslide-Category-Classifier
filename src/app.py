@@ -379,7 +379,8 @@ def make_handler(pred, vlm, save, max_saved=2000, token=None, dim=None):
                             "photos": [{"i": i, "label": s["label"], "confidence": round(s["confidence"], 3)}
                                        for i, s in zip(main, singles)],
                             "joined_type": ({"label": rm["label"], "confidence": round(rm["confidence"], 3)} if rm else None)}
-                kw = self._walk_scale(st, ex, rep) if ex["mosaic"] is None else {}
+                # a joined picture's focal is not this photo's EXIF: pass its measured uncertainty and source
+                kw = self._walk_scale(st, ex, rep) if ex["mosaic"] is None else                     {"focal_sd": rep["focal_sd"], "focal_src": rep["focal_source"]}
                 r["set"]["steps_given"] = bool(self._q("steps"))
                 if kw.get("metric_points"):
                     r["set"]["stereo_points"] = kw["metric_points"]["n"]
