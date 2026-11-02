@@ -257,6 +257,25 @@ often than on clear photos (57% vs 86%).
    - **`earth_mud_flow`:** 51 photos in total, 43 in train+val; CV recall 0.40.
    - **`no_landslide` ↔ `fall_topple`:** a stable cliff with old talus vs a rock fall.
 
+### 4.6 Cheap accuracy levers, out-of-fold (`tools/accuracy_eval.py`, added 2026-11-03)
+
+These runs use usable train+val photos only (1062 photos, 586 sites), with site-grouped 5-fold CV and the
+same splitter as 4.1. C is chosen inside the training folds and the test split is not read. The difference
+column is a paired site bootstrap with a 90 % interval.
+
+| variant | macro-F1 | site-weighted F1 | accuracy | answered / acc there | diff vs shipped |
+|---|---|---|---|---|---|
+| shipped (mean of 3 probes) | 0.704 | 0.714 | 77.3 % | 73 % / 88.1 % | - |
+| log opinion pool | 0.694 | 0.707 | 77.4 % | 80 % / 85.8 % | -0.009 [-0.022, +0.005] |
+| stacked weights (nested) | 0.659 | 0.663 | 73.7 % | 68 % / 86.0 % | -0.045 [-0.068, -0.023] |
+| concatenated features | 0.707 | 0.713 | 78.8 % | 85 % / 82.8 % | +0.002 [-0.013, +0.017] |
+| multi-crop TTA, test only | 0.717 | 0.712 | 78.2 % | 74 % / 87.0 % | +0.012 [-0.004, +0.027] |
+| multi-crop TTA, train+test | 0.715 | 0.727 | 78.2 % | 74 % / 86.8 % | +0.012 [-0.004, +0.027] |
+
+Multi-crop averaging (the full photo plus 5 crops at 0.85 scale) adds about one point. Its interval still
+includes 0, and accuracy among confident answers drops slightly, so the shipped models were not changed.
+With about 590 sites, a 1-point gain is within noise; more labelled sites would settle it.
+
 ## 5. Field app
 
 ```
@@ -333,6 +352,52 @@ History now keeps the full last 20 results (with photo) on the phone; tapping on
 - Field usability has not yet been tested with real junior engineers. `guidance_report.py` will measure it once photos come in; it shows associations only, because users are not randomised.
 - The Hindi text was machine-drafted and needs a native speaker's review. Some mixed-format sentences stay partly in English.
 - The question likelihoods are not fitted to data; the dataset has no field answers.
+
+### 5.3 Overlapping photo sets, walk-along scale and video (features 2-3, added 2026-11-03)
+
+A landslide too big for one photo can be sent as a **set** of 2-8 overlapping photos. There are two ways
+to take one:
+- **turn on the spot**: the photos are joined into one picture with a homography mosaic;
+- **walk along** the slope: the photos are analysed together.
+
+The pipeline:
+- **Matching and checks** (`src/overlap.py`): RootSIFT with MAGSAC++ estimates both a homography and a
+  fundamental matrix. A parallax test tells turning from walking. It then checks overlap bands, order,
+  duplicates, tilt, zoom and light.
+- **Calibration** (`tools/overlap_eval.py`): simulated sets from train photos (simulation) give a link
+  threshold of 30 inliers, 0.0 % false links, an overlap error of 0.2 points, 100 % walk detection and a
+  weak band below 20 %.
+- **Type for a set:** the joined picture gets weight w = 0.25 and the single photos the rest. In
+  out-of-fold tests this gives macro-F1 0.710, against 0.674 for the middle photo alone and 0.712 for
+  the whole photo.
+- **Walk-along metric scale:** the engineer types the normal steps walked between photos (0.75 m per
+  step). The central photo is triangulated against its neighbours, using an essential matrix, recoverPose
+  and points with reprojection error < 2 px and ray angle > 1°. This gives metric depths, which then fix
+  the size scale. `tools/stereo_eval.py` tests it on simulated pairs with known depth, with the step
+  length (log-sd 0.15) and the focal also simulated as uncertain:
+  - median |log error| 0.120 and 90th percentile 0.272;
+  - stated sd 0.150, against 0.345 for the known-object prior;
+  - 90 % coverage 87.6 %;
+  - a scale was found for 71 % of pairs; pairs that are too far away for the baseline are refused.
+
+  On the real server (step 7 of the night plan) a simulated walk set with 4 steps measured 1548 points
+  on the landslide. Its 90 % length range narrowed from 5.7x (no steps) to 3.3x (max/min).
+- **Focal length of a joined picture** (`tools/focal_eval.py`, simulated turns without EXIF):
+  - The focal estimated from the homographies has a log error RMS of 0.145 (2 photos) and 0.161
+    (3 photos), with a bias of about -0.07.
+  - Val coverage of that sd is 93-98 %, so the measured value is used (`src/focal_check.json`).
+  - Before this change, a joined picture's focal was wrongly treated as EXIF, with sd 0.02.
+  - The 0.08 target was not reached; residual lens distortion and the bias dominate.
+- **Video:** in set mode a gallery video can be picked. The phone samples frames, scores sharpness
+  (variance of the Laplacian) and the estimated overlap with the last keyframe. It keeps the sharpest frame
+  once the overlap reaches the ideal band, then sends those frames as a normal photo set; no video is
+  uploaded. For walk videos the total steps are split over the photo pairs by time. The headless test on a
+  synthetic pan picked 4 keyframes, none of them blurred, with overlaps of 31-72 % and the end of the
+  sweep covered.
+
+**Limitations:** all set numbers come from simulation built from real photos, not from field sets. The
+step length is assumed to be 0.75 m. Live automatic keyframe capture while filming is not built yet,
+and real phone videos have not been tested.
 
 ## 6. Audit (2026-10-16): what a full scan found and fixed
 

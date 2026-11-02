@@ -127,6 +127,23 @@ Details and tests are in `report.md` §5.1–5.2.
 - **Live camera guide on phones** needs https: `python src/app.py --https`. This makes a self-signed certificate once in `.cache/tls`; accept the browser's warning on the phone. Without it the phone's camera app is used.
 - **Photo-check thresholds:** recalibrate after the dataset changes with `python tools/calibrate_photo_check.py` (train split only).
 
+## Photo sets and video (too big for one photo)
+
+In the app, choose **photo set**, then:
+- **Turn on the spot:** the photos are joined into one picture.
+- **Walk along:** the photos are analysed together. Type the normal steps between photos to get real
+  sizes from triangulation.
+- **Video:** pick one slow sweep from the gallery, and the phone picks sharp, overlapping frames from it.
+  For a walk video, type the total steps walked during it.
+
+The tools behind this (simulated sets from train photos; the test split is never read):
+- `tools/overlap_eval.py`: thresholds and the joined-picture weight (`src/overlap_check.json`).
+- `tools/stereo_eval.py`: the walk-along scale.
+- `tools/focal_eval.py`: the focal length of a joined picture (`src/focal_check.json`).
+- `tools/accuracy_eval.py`: out-of-fold accuracy experiments.
+
+All of them run in resumable chunks (`--budget 540`). The results are in report.md §4.6 and §5.3.
+
 ## Dimensions (after classification)
 
 `src/dimension.py` (deep-learning models and orchestration) and `src/dim_stats.py` (pixel statistics)
