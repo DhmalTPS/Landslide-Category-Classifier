@@ -119,6 +119,19 @@ TEXT = {
     "t_walk1": ["walk along, every 3-5 steps", "साथ चलें, हर 3-5 कदम"], "t_walk2": ["same distance", "समान दूरी"],
     "steps_q": ["Normal steps between photos (gives real size; leave empty if unsure)",
                 "फ़ोटो के बीच सामान्य कदम (असली माप देता है; पता न हो तो खाली छोड़ें)"],
+    "steps_q_vid": ["Normal steps walked during the whole video (gives real size; leave empty if unsure)",
+                    "पूरे वीडियो के दौरान चले सामान्य कदम (असली माप देता है; पता न हो तो खाली छोड़ें)"],
+    "vid_hint": ["Tip: you can also pick one slow video sweep from the gallery; the app picks sharp, overlapping photos from it.",
+                 "सुझाव: गैलरी से एक धीमा वीडियो स्वीप भी चुन सकते हैं; ऐप उसमें से साफ़, ओवरलैप वाली फ़ोटो चुन लेगा।"],
+    "vid_read": ["Reading the video… {p} %", "वीडियो पढ़ा जा रहा है… {p} %"],
+    "vid_done": ["{n} photos picked from the video (sharp frames with good overlap). Look at them, then press Check.",
+                 "वीडियो से {n} फ़ोटो चुनी गईं (साफ़ फ़्रेम, अच्छा ओवरलैप)। उन्हें देखें, फिर जाँचें दबाएँ।"],
+    "vid_long": ["The video is too long (over 3 minutes). Film one slow sweep of 10-60 seconds.",
+                 "वीडियो बहुत लंबा है (3 मिनट से अधिक)। 10-60 सेकंड का एक धीमा स्वीप फ़िल्माएँ।"],
+    "vid_fail": ["This video could not be read on this phone. Take photos instead, or try another video.",
+                 "यह वीडियो इस फ़ोन पर नहीं पढ़ा जा सका। फ़ोटो लें या दूसरा वीडियो आज़माएँ।"],
+    "vid_few": ["Only {n} usable frame(s) found: film again, moving slowly across the whole slope.",
+                "केवल {n} उपयोगी फ़्रेम मिले: फिर से फ़िल्माएँ, पूरी ढलान पर धीरे-धीरे घूमते हुए।"],
     "stereo_ok": ["Real size from your walk: {n} points measured from {p} photo pairs.",
                   "आपके चलने से असली माप: {p} फ़ोटो जोड़ों से {n} बिंदु मापे गए।"],
     "stereo_no": ["Walk distance given, but the photos did not give a reliable 3D scale (too far or too little texture).",
@@ -365,8 +378,47 @@ async function add(file,t,src,live){if(S.items.length>=P.max){g.toast(L('max',{n
 function estimate(){S.est=[];for(let k=0;k+1<S.items.length;k++)S.est.push(match(S.items[k].sig,S.items[k+1].sig));
  const e=S.est.find(x=>x&&!x.orient&&x.score>.3);if(e&&!S.dir)S.dir=Math.sign(e.dx)||1}
 function remove(id){S.items=S.items.filter(i=>i.id!==id);S.rep=null;estimate();render();const c=$('#ovcard');if(c)c.remove()}
-function clearSet(){S.items=[];S.rep=null;S.est=[];S.dir=0;render();$('#ovcard')?.remove()}
-async function onPicks(files,cam){if(g.mode()!=='pano')return false;g.step(1);const room=Math.max(0,P.max-S.items.length);
+function clearSet(){S.items=[];S.rep=null;S.est=[];S.dir=0;S.vidT=0;render();$('#ovcard')?.remove();if($('.pgide'))drawGuide()}
+
+/* ---------- video (feature 3): keyframes picked on the phone, sent as a normal photo set ---------- */
+function sharp(src){const w0=src.videoWidth||src.width,h0=src.videoHeight||src.height,W=160,H=Math.max(8,Math.round(W*h0/w0));
+ const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d',{willReadFrequently:true});x.drawImage(src,0,0,W,H);
+ const d=x.getImageData(0,0,W,H).data,l=new Float32Array(W*H);for(let i=0;i<W*H;i++)l[i]=.299*d[4*i]+.587*d[4*i+1]+.114*d[4*i+2];
+ let s=0,s2=0,n=0;for(let y=1;y<H-1;y++)for(let k=1;k<W-1;k++){const i=y*W+k,v=4*l[i]-l[i-1]-l[i+1]-l[i-W]-l[i+W];s+=v;s2+=v*v;n++}
+ return n?s2/n-(s/n)*(s/n):0}   // variance of the Laplacian: low = blurred (pan too fast, focus hunting)
+// frames: [{sig, sharp}] in time order -> indices of keyframes. A keyframe is taken when the estimated overlap with
+// the last keyframe falls into the ideal band; inside the band the sharpest frame wins (blurred frames, below half
+// the median sharpness, only if nothing else is there). If the band was skipped (fast pan) the last frame before it.
+function pickKeys(fr,kind,max){const n=fr.length;if(!n)return [];const B=P.bands[kind],lo=B.ideal[0],hi=B.ideal[1];
+ const sh=fr.map(f=>f.sharp).sort((a,b)=>a-b),med=sh[Math.floor(n/2)]||0,ok=f=>f.sharp>=.5*med;
+ let first=0;for(let i=1;i<Math.min(n,4);i++)if(fr[i].sharp>fr[first].sharp)first=i;
+ const keys=[first];let last=first,cand=-1,blur=-1,prev=-1;
+ const ovOf=i=>{const e=match(fr[last].sig,fr[i].sig);return e&&!e.orient&&e.score>.3?e.ov:0};
+ for(let i=first+1;i<n&&keys.length<max;i++){const ov=ovOf(i);
+  if(ov>hi){prev=i;continue}
+  if(ov>=lo){if(ok(fr[i])){if(cand<0||fr[i].sharp>fr[cand].sharp)cand=i}else if(blur<0||fr[i].sharp>fr[blur].sharp)blur=i;continue}
+  const k=cand>=0?cand:blur>=0?blur:prev>last?prev:i;keys.push(k);last=k;cand=blur=prev=-1;i=k}
+ if(keys.length<max){const k=cand>=0?cand:blur;if(k>last)keys.push(k);else for(let i=n-1;i>last;i--)if(ok(fr[i])){if(ovOf(i)<B.dup)keys.push(i);break}}   // keep the (sharp) end of the sweep unless it adds nothing
+ return keys}
+const seek=(v,t)=>new Promise(r=>{const to=setTimeout(r,4000);v.onseeked=()=>{clearTimeout(to);r()};v.currentTime=t});
+async function fromVideo(file){const st=$('#pano .pstat'),room=Math.max(0,P.max-S.items.length);if(!room){g.toast(L('max',{n:P.max}));return}
+ const v=document.createElement('video');v.muted=true;v.playsInline=true;v.preload='auto';const url=URL.createObjectURL(file);
+ try{await new Promise((res,rej)=>{const to=setTimeout(()=>rej(new Error('timeout')),15000);v.onloadeddata=()=>{clearTimeout(to);res()};v.onerror=()=>{clearTimeout(to);rej(new Error('decode'))};v.src=url});
+  const T=v.duration;if(!isFinite(T)||T<.5||!v.videoWidth)throw new Error('empty');if(T>180){g.toast(L('vid_long'));return}
+  const dt=Math.max(.25,T/400),fr=[];
+  for(let t=0;t<T;t+=dt){await seek(v,t);fr.push({t,sig:sig(v),sharp:sharp(v)});if(st)st.textContent=L('vid_read',{p:Math.round(100*t/T)})}
+  const keys=pickKeys(fr.filter(f=>f.sig),S.kind,room),F=fr.filter(f=>f.sig);
+  if(keys.length<2){g.toast(L('vid_few',{n:keys.length}));render();return}
+  const s=Math.min(1,1600/Math.max(v.videoWidth,v.videoHeight)),c=document.createElement('canvas');c.width=Math.round(v.videoWidth*s);c.height=Math.round(v.videoHeight*s);
+  S.vidT=T;
+  for(const k of keys){await seek(v,F[k].t);c.getContext('2d').drawImage(v,0,0,c.width,c.height);
+   const b=await new Promise(r=>c.toBlob(r,'image/jpeg',.92));const it=await add(b,null,'vid',c);if(it)it.vt=F[k].t}
+  drawGuide();g.toast(L('vid_done',{n:keys.length}));g.say(L('vid_done',{n:keys.length}))}
+ catch(_){g.toast(L('vid_fail'));render()}
+ finally{URL.revokeObjectURL(url)}}
+async function onPicks(files,cam){if(g.mode()!=='pano')return false;g.step(1);
+ const vid=[...files].find(f=>f.type&&f.type.startsWith('video/'));if(vid){await fromVideo(vid);$('#pano .tray')?.scrollIntoView({behavior:'smooth',block:'nearest'});return true}
+ const room=Math.max(0,P.max-S.items.length);
  if(files.length>room)g.toast(L('max',{n:P.max}));
  for(const f of files.slice(0,room))await add(f,cam?g.ori():null,cam?'cam':'gal');
  if(cam&&S.items.length<P.max){const k=S.items.length;g.toast(L('added',{k})+' '+(S.kind==='turn'?L('next_turn',{d:L(S.dir<0?'left':'right')}):L('next_walk')))}
@@ -377,7 +429,7 @@ function build(){const card=$('#capH').closest('.card');
  card.querySelector('#shots').insertAdjacentHTML('afterend',`<div class="pgide" hidden><div class="seg pk" role="group" aria-label="${esc(L('mode_turn'))} / ${esc(L('mode_walk'))}">
   <button type="button" data-k="turn">${esc(L('mode_turn'))}</button><button type="button" data-k="walk">${esc(L('mode_walk'))}</button></div>
   <p class="pintro hungr" style="margin:0 0 6px"></p><div class="pdiag"></div><ol class="prules"></ol>
-  <label class="psteps hungr" style="display:block;margin:0 0 8px">${esc(L('steps_q'))} <input type="number" inputmode="numeric" min="1" max="50" step="1" style="width:4.5em"></label>
+  <p class="pvid hungr" style="margin:0 0 6px">${esc(L('vid_hint'))}</p><label class="psteps hungr" style="display:block;margin:0 0 8px"><span class="pstq">${esc(L('steps_q'))}</span> <input type="number" inputmode="numeric" min="1" max="50" step="1" style="width:4.5em"></label>
   <button type="button" class="minibtn" data-a="examples">${esc(L('examples'))}</button></div>`);
  card.querySelector('.btns').insertAdjacentHTML('afterend',`<div id="pano" hidden><div class="tray" aria-live="polite"></div><p class="pstat"></p>
   <div class="row" style="margin:0 0 6px"><button type="button" class="btn primary" data-a="check" disabled>${esc(L('check'))}</button><button type="button" class="minibtn" data-a="clear">${esc(L('clear'))}</button></div></div>`);
@@ -392,8 +444,13 @@ function drawGuide(){const gd=$('.pgide');gd.querySelectorAll('[data-k]').forEac
  gd.querySelector('.pdiag').innerHTML=S.kind==='turn'?P.svg.turn+P.svg.strip:P.svg.walk;
  gd.querySelectorAll('.pdiag text[class^=t-]').forEach(t=>{t.textContent=L(t.getAttribute('class').replace('-','_'))});
  gd.querySelector('.prules').innerHTML=L('rules_'+S.kind).map(r=>`<li>${esc(r)}</li>`).join('');
- gd.querySelector('.psteps').hidden=S.kind!=='walk'}
-function steps(){const v=+($('.pgide .psteps input')?.value||0);return S.kind==='walk'&&v>0&&v<=50?Math.round(v):null}
+ gd.querySelector('.psteps').hidden=S.kind!=='walk';gd.querySelector('.pstq').textContent=L(vidTimes().length>1?'steps_q_vid':'steps_q')}
+const vidTimes=()=>S.items.filter(i=>i.vt!=null).map(i=>i.vt);
+// steps between neighbouring photos; for a video the number typed is the total for the whole video, so a pair
+// gets total x (mean time between picked frames) / video length (steady walking pace assumed)
+function steps(){const v=+($('.pgide .psteps input')?.value||0),t=vidTimes();if(S.kind!=='walk'||!(v>0))return null;
+ if(t.length>1&&S.vidT){const x=v*((t[t.length-1]-t[0])/(t.length-1))/S.vidT;return x>0&&x<=50?Math.round(x*10)/10:null}
+ return v<=50?Math.round(v):null}
 function examples(){const m=$('#mTour');m.firstElementChild.innerHTML=`<div class="row" style="margin:0"><h2 id="tourT" style="margin:0">${esc(L('ex_title'))}</h2><button type="button" class="minibtn" data-a="x" data-f>${esc(L('close'))}</button></div>
  <div class="exgrid">${P.examples.map(([k,ok,svg])=>`<div class="excard ${ok?'ok':'no'}">${svg}<b>${ok?'&#10003;':'&#10005;'}</b>${esc(L('ex_'+k))}</div>`).join('')}</div>`;
  m.hidden=false;m.querySelector('[data-f]').focus();m.onclick=e=>{if(e.target===m||e.target.dataset.a==='x')m.hidden=true}}
@@ -403,7 +460,7 @@ function render(){const tr=$('#pano .tray');if(!tr)return;
   return `<div class="pit ${it.src==='cam'?'cam':''}"><img src="${it.thumb}" alt=""><span class="pn">${k+1}</span><button type="button" class="px" data-id="${it.id}" aria-label="${esc(L('remove',{k:k+1}))}">&times;</button></div>${link}`}).join('');
  const n=S.items.length;$('#pano .pstat').textContent=n?L('n_photos',{n})+' · '+L('est_note'):L('add_hint');
  $('#pano [data-a=check]').disabled=n<2}
-function apply(){const on=want;$('.pgide').hidden=!on;$('#pano').hidden=!on;g.galIn.multiple=on;
+function apply(){const on=want;$('.pgide').hidden=!on;$('#pano').hidden=!on;g.galIn.multiple=on;g.galIn.accept=on?'image/*,video/*':'image/*';
  const tips=$('#capH').closest('.card').querySelector('.tips');if(tips)tips.hidden=on;if(on){drawGuide();render()}}
 
 /* ---------- live camera: ghost of the last photo, target line, overlap meter ---------- */
@@ -525,7 +582,7 @@ A.pano={show(on){want=on;if(ready)apply()},init(){g=A._g;D=A.D;P=D.pano;esc=A.es
   build();ready=true;apply();A.onPicks=onPicks},
  label(){return L('label_turn',{k:S.items.length+1})},hint(){return S.items.length?(S.kind==='turn'?L('next_turn',{d:L((S.dir||1)<0?'left':'right')}):L('next_walk')):L(S.kind==='turn'?'hint_first_turn':'hint_first_walk')},
  finder,tick,shot,gx(){return `${S.kind}:${S.items.length}:${S.rep?S.rep.verdict:'-'}:${S.items.filter(i=>i.src==='cam').length}`},
- _S:S,_match:match,_sig:sig,_add:add,_check:check,_join:join};
+ _S:S,_match:match,_sig:sig,_add:add,_check:check,_join:join,_pick:pickKeys,_sharp:sharp,_video:fromVideo,_steps:steps};
 })();
 """
 
