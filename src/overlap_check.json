@@ -29,7 +29,7 @@
   "train_turn_pairs": 450,
   "train_walk_pairs": 300,
   "train_unrelated": 150,
-  "overlap_mae": 0.0019,
+  "overlap_mae": 0.0023,
   "false_link": 0.0,
   "walk_detected": {
    "0.08": 1.0,
