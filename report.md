@@ -285,6 +285,55 @@ load, allow Python through Windows Firewall for private networks.
 
 **Status:** a laptop prototype, not a public website (README "Status").
 
+### 5.1 User guidance (`src/guide.py`, added 2026-11-02)
+
+The guidance follows the user's journey (stepper: Safe spot → Frame → Check → Result), with one aid at each stage.
+
+| Stage | Guidance |
+|---|---|
+| First use | 5-card illustrated tour (what the app does, where to stand, framing, light/level, reading results); skippable, replayable from Help |
+| Before capture | Per-session safety checklist (4 items, all must be ticked) before the camera opens. Single-photo or **site-survey** mode with a 4-shot list (whole slope, scarp, deposit close-up, scale object). Distance helper (pace count × stride, rangefinder, Maps) with range validation |
+| Capture | Live viewfinder (needs `--https` or localhost): scarp/toe framing bands per shot, rule-of-thirds grid, level line and aim angle from the phone sensors, live light/haze/sharpness/steadiness pills, a green ready ring, haptics, optional voice. Falls back to the phone camera app |
+| Check | **Instant on-phone photo check** before upload: light, shadows, highlights, haze, blur, resolution, level, aim. Only warns ("Retake" / "Analyse anyway"); a clean photo goes straight to analysis |
+| Waiting | Upload %, then 5 stages paced by the learned server time (moving average of past runs), field tips, cancel, 4-minute timeout |
+| Result | **Next steps** card (retake; add the distance and re-measure the same photo; scale shot when depth trust is low; deposit close-up when grain size is unreadable; next survey shot). Tickable on-site signs with a tally; when uncertain, the top-2 types' signs are compared side by side. A "what do these numbers mean" glossary, plus a spoken summary |
+| Always | Help sheet (photo guide, safety, glossary, limits, settings), recent observations kept on the phone (8, with thumbnails), offline banner, retry, sun mode (high contrast), keyboard/Esc and screen-reader labels |
+
+**Photo-check thresholds are data-driven** (`tools/calibrate_photo_check.py` → `src/photo_check.json`):
+- six pixel statistics on the photo scaled to 512 px: brightness, crushed shadows, blown highlights, contrast, sharpness, and the smooth blue/bright **sky fraction**;
+- a photo is flagged when a statistic is outside the q-th / (100−q)-th percentile of accepted **train** photos, with q the largest value giving at most a 5% combined false-flag rate on train: q = 0.5;
+- the val split is held out and the test split is never read;
+- the phone recomputes the statistics with the same Pillow-style resampling and float32 rounding, because canvas scaling made sharpness about 40% higher.
+
+| Check | Result |
+|---|---|
+| False flags on good photos | train 3.6%, val 3.9% |
+| Detection of simulated failures (val) | blur 100%, dusk-dark 100%, mostly sky 100%, haze 96.1%, overexposure 86.4% |
+| Phone vs Python decisions (Edge) | 36/36 agree (5 statistics); 10/10 with sky; median differences 0.00% (sky 0.02%) |
+
+### 5.2 Guidance upgrades (2026-11-02)
+
+| # | Upgrade | How it works |
+|---|---|---|
+| 1 | **Cut-off warning** | The server reports which photo borders the landslide outline covers by more than 15% (same rule as `cut_off`). The app names the edge and the fix, e.g. "top: tilt up or step back" |
+| 2 | **Mostly-sky check** | The sky fraction (above) is shown live in the viewfinder and in the instant check |
+| 3 | **Site result for surveys** | `POST /fuse`: the type is the mean of the shots' class probabilities. Sizes use `fuse_site` over the whole-slope shots: the median, with the between-photo spread added to the range. Grains come from the deposit close-up. A combined card and a site report are shown |
+| 4 | **Decision questions** when unsure (or the top-2 margin is below 0.2) | Up to 5 yes/no field questions. The model's probabilities are updated by Bayes' rule with likelihoods P(yes \| type), and each next question has the largest expected information gain. Answers can be undone. The likelihoods are expert rules of thumb from Hungr 2014 (`src/guide_data.py`), kept within 0.05–0.92, and the screen says so |
+| 5 | **Type first, sizes after** | `stage=type` returns the type in about 3–5 s and keeps the photo on the server (last 6). `POST /measure?job=` adds the sizes (about 25 s); while waiting, the user can tick signs and answer questions. Re-measuring with a typed distance reuses the job, so there is no re-upload; if the job has expired, the photo is sent again automatically |
+| 6 | **Observation record** | Notes, weather, GPS (needs https) and the shot are stored with each result. "Save report" writes a standalone HTML page (photo, outline, type, answers, ticked signs, sizes) that prints to PDF. "Share" sends a text summary with the photo |
+| 7 | **Offline queue** | Without a connection, photos wait in IndexedDB on the phone and are sent automatically when it returns (on reconnect, or every 60 s). Results go to history and survey fusion |
+| 8 | **Practice quiz** | 5 picture pairs (close-up, mostly sky, aerial, tilted, dark vs a good photo), with feedback. Shown after the tour, replayable from Help |
+| 9 | **Guidance evidence** | Each upload logs the check flags, overrides, retakes, live-guide use, mode, shot and language to `data/app_uploads/guidance_log.csv`. `tools/guidance_report.py` reports weak-answer rates (bad photo or uncertain) per group, with Wilson 95% CIs |
+| 10 | **Hindi** | Language button: text nodes are translated as they appear (dictionary of about 300 strings plus patterns for dynamic text); speech uses hi-IN |
+
+History now keeps the full last 20 results (with photo) on the phone; tapping one reopens it.
+
+**Limitations:**
+- The live steadiness limit is a heuristic: no labelled video exists to calibrate it. It only delays the green ring, never the shutter.
+- Field usability has not yet been tested with real junior engineers. `guidance_report.py` will measure it once photos come in; it shows associations only, because users are not randomised.
+- The Hindi text was machine-drafted and needs a native speaker's review. Some mixed-format sentences stay partly in English.
+- The question likelihoods are not fitted to data; the dataset has no field answers.
+
 ## 6. Audit (2026-10-16): what a full scan found and fixed
 
 Three independent reviews covered the code, the methodology and the documents, followed by a

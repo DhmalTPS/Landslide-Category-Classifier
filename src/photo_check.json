@@ -1,0 +1,24 @@
+{
+ "thresholds": {
+  "lum_min": 67.1013,
+  "lum_max": 170.5755,
+  "dark_max": 0.1756,
+  "bright_max": 0.3183,
+  "contrast_min": 27.3699,
+  "sharp_min": 354.6601,
+  "sky_max": 0.4923
+ },
+ "n_train": 908,
+ "n_val": 154,
+ "train_flag_rate": 0.036,
+ "val_flag_rate": 0.039,
+ "percentile_q": 0.5,
+ "resize_long_side": 512,
+ "val_detection_rate": {
+  "blur (shake / focus miss)": 1.0,
+  "too dark (dusk, x0.35)": 1.0,
+  "overexposed (x2.2)": 0.864,
+  "haze / fog (low contrast)": 0.961,
+  "mostly sky (aimed too high)": 1.0
+ }
+}

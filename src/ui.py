@@ -11,6 +11,8 @@ The page works offline (system fonts, inline SVG, no external files) and has a d
 """
 import json
 
+import guide
+
 # ---------------------------------------------------------------- shared SVG definitions
 # Glyphs reuse the logo's geometry (64x64 grid, contour arcs, round caps): one visual family.
 from logo import C, GROUND, GROUND_AXIS, RADII, SIGNAL, W, _arc_d, _pt, _stops  # noqa: E402
@@ -227,7 +229,7 @@ function render(r){
     <div class="meter"><div class="row"><span>Confidence${fam?' (family)':''}</span><span class="val">${pct(conf)}</span></div>
     <div class="track"><div class="fill ${sig?'signal':''}" style="width:${(conf*100).toFixed(1)}%"></div></div></div>${note}</section>
    <section class="card"><div class="kicker">All types</div><div class="probs" style="margin-top:12px">${probs(r)}</div></section>
-   <section class="card"><div class="kicker">Check on site</div><h2>${esc(i.title)}</h2><ul class="list">${i.check.map(t=>`<li>${ico('check')}<span>${esc(t)}</span></li>`).join('')}</ul></section>
+   <section class="card" id="checkcard"><div class="kicker">Check on site</div><h2>${esc(i.title)}</h2><ul class="list">${i.check.map(t=>`<li>${ico('check')}<span>${esc(t)}</span></li>`).join('')}</ul></section>
    <section class="card safety"><h2>${ico('alert')}Safety</h2><p>${esc(i.safety)}</p></section>`;
  }
  if(r.vlm){h+=`<section class="card"><div class="kicker">Second opinion · Qwen2.5-VL (zero-shot)</div><h2 style="display:flex;gap:8px;align-items:center">${ico('spark')}${esc(n[r.vlm.label]||r.vlm.label)} · ${pct(r.vlm.confidence)}</h2><p class="hungr" style="margin:0">${esc(r.vlm.description)}</p></section>`;}
@@ -238,24 +240,10 @@ function loading(){setChip('','Analysing…',true);
  out.innerHTML='<section class="card result" aria-busy="true"><div class="kicker">Analysing photo</div><div class="skel" style="width:60%;height:22px"></div><div class="skel" style="width:85%"></div><div class="skel" style="width:40%"></div></section>';}
 function fail(msg){setChip('bad','Error');
  out.innerHTML=`<section class="card bad" role="alert"><div class="kicker">Something went wrong</div><h2>${esc(msg)}</h2><p class="hungr" style="margin:0">Check the connection to the laptop running the app, then try again.</p></section>`;}
-// phone tilt (gravity in camera axes: x right, y down, z forward) for true slope angle and height
-let tilt=null;
-function onTilt(e){if(e.beta==null)return;const b=(e.beta-90)*Math.PI/180,g=(e.gamma||0)*Math.PI/180;
- tilt=[Math.sin(g)*Math.cos(b),Math.cos(g)*Math.cos(b),-Math.sin(b)].map(v=>v.toFixed(3)).join(',')}
-async function askTilt(){try{if(window.DeviceOrientationEvent&&DeviceOrientationEvent.requestPermission)
- await DeviceOrientationEvent.requestPermission()}catch(_){}window.addEventListener('deviceorientation',onTilt)}
-document.querySelectorAll('.btn').forEach(b=>b.addEventListener('click',askTilt,{once:true}));
-async function go(e){const fromCam=e.target.id==='cam';const f=e.target.files[0];if(!f)return;e.target.value='';
- prev.src=URL.createObjectURL(f);fig.style.display='block';loading();fig.scrollIntoView({behavior:'smooth',block:'start'});
- try{const body=await shrink(f);
-  const q=new URLSearchParams(location.search),dv=parseFloat(document.getElementById('dist').value);
-  if(dv>0)q.set('d',dv);
-  if(fromCam&&tilt)q.set('g',tilt);   // gallery photos were not taken at the current tilt
-  const res=await fetch('predict?'+q,{method:'POST',body,headers:{'Content-Type':body.type||'application/octet-stream'}});
-  const r=await res.json().catch(()=>({error:'Unexpected reply from the server ('+res.status+')'}));
-  if(!res.ok)throw new Error(r.error||res.status);render(r);
- }catch(err){fail(err.message)}}
+// photo pick -> the guidance layer (src/guide.py) runs the photo check, upload, progress and next steps
+function go(e){const f=e.target.files[0];if(!f)return;e.target.value='';App.onPick(f,e.target.id==='cam')}
 document.getElementById('cam').onchange=go;document.getElementById('gal').onchange=go;
+window.App={D,esc,render,fail,setChip,shrink,dims,onPick:null};
 const demo=new URLSearchParams(location.search).get('demo');
 if(demo){const S=D.samples[demo]||D.samples.ok;   // sample result, no photo (presentations, UI checks)
  if(demo==='error')fail('could not read the image (use a JPEG or PNG photo under 40 megapixels)');else render(S);}
@@ -268,10 +256,11 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <link rel="icon" type="image/png" sizes="48x48" href="favicon.ico">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="theme-color" content="#0e4d45">
-<style>__CSS__.drow{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid rgba(127,127,127,.18);font-size:14px}.drow b{text-align:right;font-weight:600}.drow small{opacity:.65;font-weight:400}.dimg{width:100%;border-radius:10px;margin:10px 0}.dist{display:block;margin-top:14px;font-size:13px;opacity:.85}.dist input{display:block;width:100%;margin-top:6px;padding:10px;border-radius:10px;border:1px solid rgba(127,127,127,.4);font:inherit;background:transparent;color:inherit}
+<style>__CSS____GCSS__.drow{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid rgba(127,127,127,.18);font-size:14px}.drow b{text-align:right;font-weight:600}.drow small{opacity:.65;font-weight:400}.dimg{width:100%;border-radius:10px;margin:10px 0}.dist{display:block;margin-top:14px;font-size:13px;opacity:.85}.dist input{display:block;width:100%;margin-top:6px;padding:10px;border-radius:10px;border:1px solid rgba(127,127,127,.4);font:inherit;background:transparent;color:inherit}
 </style></head><body>__DEFS__<main>
-<header><div class="logo">__LOGO__</div><div class="brand"><b>Landslide Type Check</b><span>Field classifier &middot; Hungr 2014</span></div></header>
-<section class="card"><div class="kicker">New observation</div><h2>Photograph the slope from below</h2>
+<header><div class="logo">__LOGO__</div><div class="brand"><b>Landslide Type Check</b><span>Field classifier &middot; Hungr 2014</span></div><button type="button" id="helpBtn" class="iconbtn" aria-label="Help and guide">?</button><button type="button" id="langBtn" class="iconbtn langbtn" aria-label="Language: English or Hindi">हिं</button></header>
+<div id="netbar" class="netbar" role="status" hidden>You are offline. Photos cannot be analysed until the connection is back.</div>
+<section class="card"><ol class="journey" id="journey" aria-label="Progress"></ol><div class="seg" id="mode" role="group" aria-label="Capture mode"></div><ul class="shots" id="shots"></ul><div class="kicker">New observation</div><h2 id="capH">Photograph the slope from below</h2>
 <ul class="tips">
 <li>__I_pos__<span>Stand at the foot of the slope or across the road, facing up at it.</span></li>
 <li>__I_frame__<span>Fit the whole slope: the top (scarp or source) and the bottom (deposit).</span></li>
@@ -284,9 +273,10 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <input id="dist" type="number" min="1" max="3000" step="any" inputmode="decimal" placeholder="e.g. 40"></label></section>
 <figure id="fig"><img id="prev" alt="Your photo"><div id="chip" class="chip"></div></figure>
 <div id="out"></div>
+<div id="history"></div>
 <p class="foot">Decision support only &mdash; confirm with a geologist or geotechnical engineer before acting.<br>
 Classification after Hungr, Leroueil &amp; Picarelli (2014).</p>
-</main><script>__JS__</script></body></html>"""
+</main><script>__JS__</script><script>__GJS__</script></body></html>"""
 
 
 def build_page(logo_svg, info, names, tips, confident_min):
@@ -316,11 +306,12 @@ def build_page(logo_svg, info, names, tips, confident_min):
         "bad": {"status": "bad_photo", "usable": .12, "label": "no_landslide", "family": None, "confidence": .5,
                 "ranked": top("no_landslide", .5), "model": "demo", "ms": 0},
     }
-    data = {"glyphs": GLYPHS, "icons": UI_ICONS, "info": info, "names": names, "tips": tips,
+    data = {"guide": guide.data(), "glyphs": GLYPHS, "icons": UI_ICONS, "info": info, "names": names, "tips": tips,
             "families": {"flow": "Flow-type landslide", "slide": "Slide (rotational or translational)"},
             "familyGlyph": FAMILY_GLYPH, "conf": confident_min, "samples": samples}
     page = PAGE.replace("__CSS__", CSS).replace("__DEFS__", DEFS).replace("__LOGO__", logo_svg)
     for k, v in UI_ICONS.items():
         page = page.replace(f"__I_{k}__", v.replace("<svg", '<svg class="ico"'))
     # JSON inside <script>: escape "</" so no string can close the script element
+    page = page.replace("__GCSS__", guide.CSS).replace("__GJS__", guide.JS)
     return page.replace("__JS__", JS.replace("__DATA__", json.dumps(data).replace("</", "<\\/")))

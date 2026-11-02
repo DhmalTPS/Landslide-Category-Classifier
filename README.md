@@ -105,6 +105,28 @@ for this course project, but credit every photo you show ("Title" by Author, Lic
 publish modified versions of ND photos, and remove NC photos before any commercial use.
 See `results/licences.md`.
 
+## User guidance in the app
+
+`src/guide.py` adds:
+- a first-run tour and a per-session safety checklist;
+- single-photo or 4-shot site-survey mode;
+- a live framing and level viewfinder;
+- an instant on-phone photo check;
+- staged progress, "next steps" after each result, tickable on-site signs and a help sheet with a glossary.
+
+It also adds:
+- type first, then sizes;
+- a cut-off-edge warning and a mostly-sky check;
+- yes/no decision questions when the model is unsure;
+- a combined site result for surveys;
+- notes, GPS and saved or shared reports;
+- an offline queue, a practice quiz and Hindi.
+
+Details and tests are in `report.md` §5.1–5.2.
+- **Measuring whether the guidance helps:** `python tools/guidance_report.py` (after field use without `--no-save`).
+- **Live camera guide on phones** needs https: `python src/app.py --https`. This makes a self-signed certificate once in `.cache/tls`; accept the browser's warning on the phone. Without it the phone's camera app is used.
+- **Photo-check thresholds:** recalibrate after the dataset changes with `python tools/calibrate_photo_check.py` (train split only).
+
 ## Dimensions (after classification)
 
 `src/dimension.py` (deep-learning models and orchestration) and `src/dim_stats.py` (pixel statistics)
