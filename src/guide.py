@@ -198,7 +198,19 @@ details.what{margin-top:10px;font-size:.88rem}details.what summary{cursor:pointe
 .shutter span{display:block;width:100%;height:100%;border-radius:50%;background:#fff}.shutter.ready{border-color:#5fd1a8;box-shadow:0 0 0 6px rgba(95,209,168,.25)}
 .vfr{justify-self:end;font-size:.78rem;font-weight:650}
 .toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));transform:translate(-50%,140%);z-index:70;max-width:min(92vw,520px);padding:11px 16px;border-radius:14px;background:#13201c;color:#fff;font-size:.88rem;box-shadow:var(--shadow);transition:transform .25s ease}
-.toast.on{transform:translate(-50%,0)}.netbar.sync{background:#0e4d45}
+.toast.on{transform:translate(-50%,0)}
+.qband{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;padding:12px 14px;margin:14px 0;border-radius:14px;border:1.5px solid var(--line);background:var(--surface)}
+.qband .qd{width:14px;height:14px;border-radius:50%;margin-top:4px}.qband b{color:var(--ink)}.qband p{margin:4px 0 0;font-size:.88rem;color:var(--ink-2)}
+.qband ul{margin:6px 0 0;padding-left:18px;font-size:.88rem;color:var(--ink-2)}.qband .btns{margin-top:10px}
+.q0{--qc:#2f9e7e}.q1{--qc:#d39a2a}.q2{--qc:#e07a2b}.q3{--qc:#d2452b}
+.qband .qd{background:var(--qc)}.qband.q1,.qband.q2,.qband.q3{border-color:var(--qc)}.qband.q2{background:rgba(224,122,43,.08)}.qband.q3{background:rgba(210,69,43,.1);border-width:2px}
+.qm{display:inline-flex;gap:3px;vertical-align:middle;margin-left:8px}.qm i{width:15px;height:6px;border-radius:3px;background:rgba(127,127,127,.35)}.qm i.on{background:var(--qc)}
+.sev{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:99px;font-size:.72rem;font-weight:700;color:#fff;background:#d39a2a;vertical-align:1px}.sev.s2{background:#d2452b}
+.vfq{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(152px + env(safe-area-inset-bottom));display:flex;align-items:center;gap:4px;padding:6px 12px;border-radius:99px;background:rgba(0,0,0,.6);font-size:.8rem;font-weight:700;white-space:nowrap;color:var(--qc)}
+.vfq.q0{--qc:#5fd1a8}.vfq.q1{--qc:#ffc862}.vfq.q2{--qc:#ff9a52}.vfq.q3{--qc:#ff745e}.vfq:empty{display:none}
+.vfarrow{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);font-size:68px;line-height:1;color:#ffc862;text-shadow:0 2px 10px #000;pointer-events:none;animation:nudge 1.2s ease-in-out infinite}
+.vfarrow:empty{display:none}@keyframes nudge{50%{transform:translate(-50%,-62%)}}@media (prefers-reduced-motion:reduce){.vfarrow{animation:none}}
+.pills .bad{box-shadow:inset 0 0 0 1.5px #ff745e;color:#ffb3a3}.shutter.poor{border-color:#ff745e}.netbar.sync{background:#0e4d45}
 .qa{display:flex;gap:8px;flex-wrap:wrap}.qa .minibtn{min-width:84px;min-height:44px}
 .quiz{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:6px 0}.quiz button{border:2px solid var(--line);border-radius:14px;background:var(--surface-2);padding:6px;cursor:pointer;color:var(--ink-2);font:700 .9rem inherit}
 .quiz svg{width:100%;height:auto;max-height:190px}.quiz .right{border-color:#34b08c;box-shadow:0 0 0 3px rgba(52,176,140,.25)}.quiz .wrong{opacity:.5}
@@ -262,7 +274,7 @@ document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="mTour" hidd
 <div class="vfg" data-frame="full"><i class="h1"></i><i class="h2"></i><i class="v1"></i><i class="v2"></i><div class="band top">Top of the slope (scarp)</div><div class="band bot">Bottom (toe / deposit)</div></div>
 <div class="lvl" aria-hidden="true"></div>
 <div class="vft"><button type="button" data-a="close" aria-label="Close camera">&#10005;</button><span class="vfs"></span><button type="button" data-a="voice" aria-label="Voice guidance"></button></div>
-<div class="pills" aria-hidden="true"></div><div class="vfmsg" aria-live="polite"></div>
+<div class="pills" aria-hidden="true"></div><div class="vfarrow" aria-hidden="true"></div><div class="vfq" aria-hidden="true"></div><div class="vfmsg" aria-live="polite"></div>
 <div class="vfb"><button type="button" class="alt" data-a="native">Phone camera</button><button type="button" class="shutter" data-a="shoot" aria-label="Take photo"><span></span></button><span class="vfr"></span></div></div>`);
 let lastFocus=null;
 function openM(id,html){const m=$('#'+id);m.firstElementChild.innerHTML=html;m.hidden=false;lastFocus=document.activeElement;
@@ -344,17 +356,27 @@ function metrics(src,keep){const w0=src.videoWidth||src.width,h0=src.videoHeight
    const o=q*3,gv=g[q];ni++;if(Math.abs(l)<6&&((C3[o+2]>C3[o]+8&&C3[o+2]>=C3[o+1]&&gv>100)||gv>220))sk++}tv.push(k?s2/k-(s1/k)**2:0)}
  let motion=null;if(keep){if(prevG&&prevG.length===n){let m=0;for(let j=0;j<n;j+=7)m+=Math.abs(g[j]-prevG[j]);motion=m/(n/7)}prevG=g}
  const mean=su/n;return {lum:mean,dark:dk/n,bright:br/n,contrast:Math.sqrt(Math.max(0,sq/n-mean*mean)),sharp:pctl(tv,90),sky:ni?sk/ni:0,w:w0,h:h0,motion}}
-function judge(m,t){const c=[];
- c.push(['Light',m.lum<T.lum_min?'Too dark. Face the slope with the sun behind or beside you, or wait for better light.':m.lum>T.lum_max?'Too bright. Point less at the sky; tap the slope on screen to set exposure.':null]);
- c.push(['Shadows',m.dark>T.dark_max?'Large black areas: deep shadow hides the surface. Step sideways so the slope is evenly lit.':null]);
- c.push(['Highlights',m.bright>T.bright_max?'Large white areas: sky or glare is blown out. Tilt down so less sky is in the frame.':null]);
- c.push(['Haze / contrast',m.contrast<T.contrast_min?'Flat, low-contrast image (fog, rain or a dirty lens). Wipe the lens; in fog, move closer.':null]);
- c.push(['Framing',m.sky>T.sky_max?'Mostly sky. Tilt down so the slope fills most of the frame.':null]);
- c.push(['Sharpness',m.sharp<T.sharp_min?'Blurred. Use two hands, tap the slope to focus, and hold still while the photo is taken.':null]);
- c.push(['Resolution',Math.min(m.w,m.h)<720?'Small image ('+m.w+'×'+m.h+'). Use the original camera photo, not a screenshot or a chat-app copy.':null]);
- if(t){c.push(['Level',Math.abs(t.roll)>10?'Phone tilted sideways by '+Math.round(Math.abs(t.roll))+'°. Hold it level.':null]);
-  c.push(['Aim',t.elev<-15?'Camera points down. Stand below the slope and look up at it.':t.elev>60?'Camera points steeply up. Step back so the whole slope fits.':null])}
+// each check: [name, advice or null, severity 0 ok / 1 minor / 2 serious]. "Minor" = outside the calibrated
+// range of the training photos (photo_check.json); "serious" = far outside it (G.severe, a fixed margin).
+function judge(m,t){const c=[],V=G.severe,add=(k,s1,s2,msg)=>c.push([k,s1||s2?msg:null,s2?2:s1?1:0]);
+ add('Light',m.lum<T.lum_min||m.lum>T.lum_max,m.lum<T.lum_min*V.lum_lo||m.lum>T.lum_max+(255-T.lum_max)*V.lum_hi,
+  m.lum<T.lum_min?'Too dark. Face the slope with the sun behind or beside you, or wait for better light.':'Too bright. Point less at the sky; tap the slope on screen to set exposure.');
+ add('Shadows',m.dark>T.dark_max,m.dark>T.dark_max*V.dark_x,'Large black areas: deep shadow hides the surface. Step sideways so the slope is evenly lit.');
+ add('Highlights',m.bright>T.bright_max,m.bright>T.bright_max*V.bright_x,'Large white areas: sky or glare is blown out. Tilt down so less sky is in the frame.');
+ add('Haze / contrast',m.contrast<T.contrast_min,m.contrast<T.contrast_min*V.contrast_x,'Flat, low-contrast image (fog, rain or a dirty lens). Wipe the lens; in fog, move closer.');
+ add('Framing',m.sky>T.sky_max,m.sky>V.sky,'Mostly sky. Tilt down so the slope fills most of the frame.');
+ add('Sharpness',m.sharp<T.sharp_min,m.sharp<T.sharp_min*V.sharp_x,'Blurred. Use two hands, tap the slope to focus, and hold still while the photo is taken.');
+ add('Resolution',Math.min(m.w,m.h)<720,Math.min(m.w,m.h)<V.res,'Small image ('+m.w+'×'+m.h+'). Use the original camera photo, not a screenshot or a chat-app copy.');
+ if(t){add('Level',Math.abs(t.roll)>10,Math.abs(t.roll)>V.roll,'Phone tilted sideways by '+Math.round(Math.abs(t.roll))+'°. Hold it level.');
+  add('Aim',t.elev<-15||t.elev>60,t.elev<V.elev_lo||t.elev>V.elev_hi,t.elev<-15?'Camera points down. Stand below the slope and look up at it.':'Camera points steeply up. Step back so the whole slope fits.')}
  return c}
+// overall quality of the analysis: 0 Good, 1 Fair, 2 Poor, 3 Very poor (a failed server photo check is 3)
+const QL=['Good','Fair','Poor','Very poor'];
+function grade(c,failed){const s2=c.filter(x=>x[2]===2).length,s1=c.filter(x=>x[2]===1).length;
+ return failed||s2>=2?3:s2===1||s1>=3?2:s1?1:0}
+const qmeter=l=>`<span class="qm" aria-hidden="true">${[0,1,2,3].map(k=>`<i class="${k<4-l?'on':''}"></i>`).join('')}</span>`;
+// hold a changing value until it is seen on n ticks in a row (stops the live hints from flickering)
+function hold(st,v,n=2){if(v===st.cand)st.k++;else{st.cand=v;st.k=1}if(st.v===undefined||st.k>=n)st.v=v;return st.v}
 
 /* ---------- phone orientation: gravity in image axes (x right, y down, z forward) ---------- */
 let ori=null;
@@ -379,17 +401,28 @@ async function openFinder(){listenOri();step(1);vf.hidden=false;const s=curShot(
   vf.querySelector('[data-a=shoot]').focus()}
  catch(err){closeFinder();camIn.click()}}
 function closeFinder(){clearInterval(loop);loop=null;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;vf.hidden=true;A.pano&&A.pano.finder(false)}
-function liveTick(){if(!vid.videoWidth)return;const m=metrics(vid,true),t=ori,c=judge(m,t).filter(x=>x[0]!=='Resolution'&&!(mode==='pano'&&x[0]==='Framing')),pills=[],bad=c.filter(x=>x[1]);
- const px=mode==='pano'&&A.pano?A.pano.tick(vid,t):null;if(px){bad.unshift(...px.bad)}
- const steady=m.motion==null||m.motion<G.steadyMax;if(!steady)bad.push(['Steady','Hold still for a moment.']);
- const lvl=vf.querySelector('.lvl');if(t){lvl.style.transform=`translate(-50%,-50%) rotate(${-t.roll}deg)`;lvl.classList.toggle('ok',Math.abs(t.roll)<=3)}else lvl.style.display='none';
- for(const [k,v] of c)pills.push(`<span class="${v?'warn':'ok'}">${k}</span>`);pills.push(`<span class="${steady?'ok':'warn'}">Steady</span>`);
+function liveTick(){if(!vid.videoWidth)return;liveShow(metrics(vid,true),ori,mode==='pano'&&A.pano?A.pano.tick(vid,ori):null)}
+// one live reading -> pills (coloured by severity), quality meter, one instruction with a direction arrow, shutter
+// ring. Level and instruction change only after 2 readings in a row agree. The shutter always works.
+const lv={q:{},m:{}};
+function liveShow(m,t,px){const c=judge(m,t).filter(x=>x[0]!=='Resolution'&&!(mode==='pano'&&x[0]==='Framing')),pills=[];
+ const steady=m.motion==null||m.motion<G.steadyMax,own=c.filter(x=>x[1]).sort((a,b)=>b[2]-a[2]);if(!steady)own.push(['Steady','Hold still for a moment.',1]);
+ const bad=(px?px.bad.map(b=>[b[0],b[1],1]):[]).concat(own);
+ const lvl=vf.querySelector('.lvl');if(t){lvl.style.display='';lvl.style.transform=`translate(-50%,-50%) rotate(${-t.roll}deg)`;lvl.classList.toggle('ok',Math.abs(t.roll)<=3)}else lvl.style.display='none';
+ const cls=s=>s===2?'bad':s?'warn':'ok';
+ for(const [k,v,s] of c)pills.push(`<span class="${cls(v?s:0)}">${k}</span>`);pills.push(`<span class="${steady?'ok':'warn'}">Steady</span>`);
  if(t)pills.push(`<span class="${t.elev>=-10&&t.elev<=45?'ok':'warn'}">Aim ${Math.round(t.elev)}°</span>`);
  if(px)pills.unshift(...px.pills);
  vf.querySelector('.pills').innerHTML=pills.join('');
- const ready=!bad.length,msg=ready?(px&&px.good)||'Good. Take the photo.':bad[0][1];vf.querySelector('.vfmsg').textContent=msg;
- vf.querySelector('.shutter').classList.toggle('ready',ready);vf.querySelector('.vfr').textContent=ready?'Ready':'';
- const now=Date.now();if(ready&&!wasReady){buzz(30);say(msg);lastSay=now}else if(!ready&&now-lastSay>5000){say(msg);lastSay=now}wasReady=ready}
+ const q=hold(lv.q,grade(c.concat(steady?[]:[['Steady','',1]]),false)),top=hold(lv.m,bad.length?bad[0][0]:''),hit=bad.find(x=>x[0]===top)||bad[0],ready=!top;
+ const vq=vf.querySelector('.vfq');vq.className='vfq q'+q;vq.innerHTML=esc(tr('Photo quality'))+': '+esc(tr(QL[q]))+qmeter(q);
+ const msg=ready||!hit?(px&&px.good)||'Good. Take the photo.':hit[1];vf.querySelector('.vfmsg').textContent=msg;
+ const k=ready?'':top;vf.querySelector('.vfarrow').textContent=k==='Framing'||(k==='Aim'&&t&&t.elev>60)?'\u2193':k==='Aim'?'\u2191':'';
+ const sh=vf.querySelector('.shutter');sh.classList.toggle('ready',ready&&q===0);sh.classList.toggle('poor',q>=2);
+ sh.setAttribute('aria-label',tr('Take photo')+' · '+tr('Photo quality')+': '+tr(QL[q]));
+ vf.querySelector('.vfr').textContent=ready&&q===0?'Ready':q===1?'OK to shoot':q>=2?'Can still shoot':'';
+ const now=Date.now();if(ready&&!wasReady){buzz(30);say(msg);lastSay=now}else if(!ready&&(msg!==lv.said||now-lastSay>5000)){say(msg);lastSay=now}lv.said=msg;wasReady=ready;
+ return {q,ready,msg}}
 async function shoot(){const t=ori;let blob=null;buzz([20,40,20]);
  try{if(cap&&cap.takePhoto)blob=await cap.takePhoto()}catch(_){blob=null}
  if(!blob){const c=document.createElement('canvas');c.width=vid.videoWidth;c.height=vid.videoHeight;c.getContext('2d').drawImage(vid,0,0);blob=await new Promise(r=>c.toBlob(r,'image/jpeg',.92))}
@@ -451,6 +484,8 @@ const gArg=()=>lastSrc==='cam'&&lastTilt?lastTilt.g:null;
 const ema=(k,v,d)=>Math.round(.6*store.get(k,d)+.4*v);
 
 /* ---------- instant photo check ---------- */
+const sevTag=s=>s?`<span class="sev s${s}">${s===2?'serious':'minor'}</span>`:'';
+let photoQ={level:0,issues:[]};
 let lastF35=null,lastBlob=null,lastTilt=null,lastSrc='cam',lastDist=null,xhr=null,job=null,cur=null,curMeta=null,curPhoto='';
 A.onPick=(f,fromCam)=>start(f,fromCam,fromCam?ori:null,false);
 async function start(file,fromCam,t,live){lastSrc=fromCam?'cam':'gal';gstate.live=!!live;gstate.override=false;step(2);
@@ -459,12 +494,13 @@ async function start(file,fromCam,t,live){lastSrc=fromCam?'cam':'gal';gstate.liv
  fig.scrollIntoView({behavior:'smooth',block:'start'});
  let m=null;try{const bmp=await createImageBitmap(file,{imageOrientation:'from-image'});m=metrics(bmp);bmp.close&&bmp.close()}catch(_){}
  lastBlob=await A.shrink(file);lastTilt=t;
- const c=m?judge(m,t):[],bad=c.filter(x=>x[1]);gstate.flags=bad.map(b=>b[0]);
- if(!bad.length){send();return}
- A.setChip('signal','Check the photo');say(tr('Photo check')+': '+bad.map(b=>tr(b[0])).join(', ')+'. '+tr(bad[0][1]));buzz([40,60,40]);
- out.innerHTML=`<section class="card bad" aria-live="polite"><div class="kicker">Instant photo check</div><h2>${bad.length===1?'One thing could be better':bad.length+' things could be better'}</h2>
- <ul class="qc">${c.map(([k,v])=>`<li>${v?`<span class="warn">${ICO('alert')}</span><span><b>${k}:</b> <span>${esc(v)}</span></span>`:`<span class="ok">${ICO('check')}</span><span><b>${k}</b> <span>OK</span></span>`}</li>`).join('')}</ul>
- <p class="hungr" style="margin:0 0 12px">Flagged because fewer than 1 in ${Math.round(100/G.check.percentile_q)} training photos looks like this, so the answer would be less reliable. You can still send it.</p>
+ const c=m?judge(m,t):[],bad=c.filter(x=>x[1]).sort((a,b)=>b[2]-a[2]);gstate.flags=bad.map(b=>b[0]);
+ photoQ={level:grade(c,false),issues:bad};
+ if(photoQ.level<2){send();return}       // Good / Fair: no stop; a Fair result carries its quality band
+ const l=photoQ.level;A.setChip(l===3?'bad':'signal',tr('Photo quality')+': '+tr(QL[l]));say(tr('Photo quality')+': '+tr(QL[l])+'. '+tr(bad[0][1]));buzz([40,60,40]);
+ out.innerHTML=`<section class="card qband q${l}" aria-live="polite" style="display:block"><div class="kicker">Instant photo check</div><h2><span>Photo quality</span>: <span>${QL[l]}</span>${qmeter(l)}</h2>
+ <ul class="qc">${c.map(([k,v,s])=>`<li>${v?`<span class="warn">${ICO('alert')}</span><span><b>${k}:</b>${sevTag(s)} <span>${esc(v)}</span></span>`:`<span class="ok">${ICO('check')}</span><span><b>${k}</b> <span>OK</span></span>`}</li>`).join('')}</ul>
+ <p class="hungr" style="margin:0 0 12px">${l===3?'The answer from this photo is likely to be wrong. Retaking is strongly advised.':'The answer from this photo will be rough.'} <span>You can still analyse it: the result is shown as computed and marked with this quality.</span></p>
  <div class="btns"><button type="button" class="btn primary" data-a="retake">${ICO('camera')}Retake</button><button type="button" class="btn ghost" data-a="send">Analyse anyway</button></div></section>`;
  out.querySelector('[data-a=retake]').onclick=()=>{gstate.retakes++;fig.style.display='none';out.innerHTML='';step(1);lastSrc==='cam'?openCamera():galIn.click()};
  out.querySelector('[data-a=send]').onclick=()=>{gstate.override=true;send()}}
@@ -495,12 +531,12 @@ function send(){const dv=parseFloat(dist.value);lastDist=dv>=1&&dv<=3000?dv:null
  A.setChip('','Identifying…',true);busy('Analysing photo');
  const P=prog($('#pg'),G.stagesType,store.get('etaT',4000),true);
  post('predict?'+params({stage:'type',d:lastDist,g:gArg(),f35:lastF35,gx:gx()}),lastBlob,P,{
-  ok:r=>{if(r.ms)store.set('etaT',ema('etaT',r.ms,4000));cur=r;job=r.job||null;A.render(r);afterType(r);if(job)measure();else finish(r)},
+  ok:r=>{if(r.ms)store.set('etaT',ema('etaT',r.ms,4000));cur=r;job=r.job||null;withQ(r);A.render(r);afterType(r);sizes(r)},
   err:(m,s)=>s===-2?cancelled():fail(m,s===0)})}
 function fullSend(d0){A.setChip('','Analysing…',true);busy('Sending the photo again');
  const P=prog($('#pg'),G.stagesType.concat(G.stagesDims.map(([f,t])=>[.12+f*.88,t])),store.get('etaT',4000)+store.get('etaD',28000),true);
  post('predict?'+params({stage:'full',d:d0??lastDist,g:gArg(),f35:lastF35,gx:gx()}),lastBlob,P,{
-  ok:r=>{if(d0)lastDist=d0;const id=cur&&cur.__id;cur=r;if(id)r.__id=id;job=null;A.render(r);afterType(r);if(r.dimensions)afterDims(r);finish(r)},
+  ok:r=>{if(d0)lastDist=d0;const id=cur&&cur.__id;cur=r;if(id)r.__id=id;job=null;withQ(r);A.render(r);afterType(r);if(r.dimensions)afterDims(r);finish(r)},
   err:(m,s)=>s===-2?cancelled():fail(m,s===0)})}
 function measure(d0){const slot=document.createElement('section');slot.className='card';slot.id='dimslot';
  slot.innerHTML=`<div class="kicker">Estimated dimensions</div><p class="hungr" style="margin:4px 0 0">The type is ready above. Measuring the size now; you can already tick the signs and answer the questions.</p><div id="dpg"></div>
@@ -513,9 +549,27 @@ function measure(d0){const slot=document.createElement('section');slot.className
   err:(m,s)=>{if(s===410&&lastBlob){fullSend(dv);return}
    slot.innerHTML=`<div class="kicker">Estimated dimensions</div><p class="hungr">${s===-2?'Sizes skipped.':'Sizes could not be measured: '+esc(m)}</p><button type="button" class="minibtn" id="dretry">Measure sizes</button>`;
    $('#dretry').onclick=()=>measure(dv);typeChip(cur);finish(cur)}})}
-function typeChip(r){A.setChip(r.status==='uncertain'?'signal':r.status==='bad_photo'?'bad':'',r.status==='uncertain'?'Uncertain':r.status==='bad_photo'?'Retake photo':'Landslide type')}
+function typeChip(r){A.setChip(r.status==='uncertain'?'signal':r.status==='bad_photo'?'bad':'',r.status==='uncertain'?'Uncertain':r.status==='bad_photo'?'Not reliable':'Landslide type')}
+// the quality of this analysis travels with the result (saved, reports, history)
+function withQ(r){const lv=Math.max(photoQ.level,r.status==='bad_photo'?3:0);r.quality={level:lv,issues:photoQ.issues.map(x=>[x[0],x[1],x[2]]),failed:r.status==='bad_photo'};photoQ={level:0,issues:[]};return r}
+function qLevel(r){return r.quality?r.quality.level:r.status==='bad_photo'?3:0}
+function qBand(r){const q=r.quality||{level:qLevel(r),issues:[],failed:r.status==='bad_photo'},l=q.level,old=$('#qband');if(old)old.remove();
+ const what=['Nothing to fix: the photo meets the quality checks.','Small issues: the result is a little less reliable than usual.',
+  'Rough result: treat it as a first look and retake if you can.','Not reliable: shown only for reference. Retake before acting on it.'][l];
+ const items=q.issues.map(([k,v,s])=>`<li><b>${esc(k)}</b>${sevTag(s)} <span>${esc(v)}</span></li>`);
+ if(q.failed)items.unshift(`<li><b>Photo check</b>${sevTag(2)} <span>This does not look like a ground photo of a slope</span> (${Math.round((r.usable||0)*100)}% <span>usable</span>).</li>`);
+ const h=`<section class="qband q${l}" id="qband" role="status"><span class="qd"></span><div><b><span>Photo quality</span>: <span>${QL[l]}</span></b>${qmeter(l)}<p>${what}</p>
+  ${items.length?`<ul>${items.join('')}</ul>`:''}${l?`<p>Nothing is adjusted to look better: the confidence and ranges are the model's own, and the ranges were checked on usable photos only.</p>`:''}
+  ${l>=2?`<div class="btns"><button type="button" class="btn ${l===3?'primary':'ghost'}" data-a="retake">${ICO('camera')}Retake</button></div>`:''}</div></section>`;
+ out.insertAdjacentHTML('afterbegin',h);$('#qband [data-a=retake]')?.addEventListener('click',()=>act('retake'))}
+// sizes: measured straight away, except after a failed photo check, where one tap asks for them
+function sizes(r){if(!job){finish(r);return}if(r.status!=='bad_photo'){measure();return}
+ const slot=document.createElement('section');slot.className='card';slot.id='dimslot';
+ slot.innerHTML=`<div class="kicker">Estimated dimensions</div><p class="hungr" style="margin:4px 0 10px">Sizes from a photo that failed the photo check are not reliable, so they are not measured automatically.</p><button type="button" class="minibtn" id="dany">Estimate sizes anyway</button>`;
+ const m=out.querySelector('.meta');m?out.insertBefore(slot,m):out.appendChild(slot);$('#dany').onclick=()=>measure();finish(r)}
 function findDims(){return $('#dimcard')||[...out.querySelectorAll('.card')].find(c=>/^Estimated dimensions|^अनुमानित आयाम/.test((c.querySelector('.kicker')?.textContent||'').trim())&&c.id!=='dimslot')}
-function placeDims(r){const w=document.createElement('div');w.innerHTML=A.dims(r.dimensions);const c=w.firstElementChild;c.id='dimcard';const s=$('#dimslot')||$('#dimcard');s?s.replaceWith(c):out.appendChild(c);typeChip(r)}
+function placeDims(r){const w=document.createElement('div');w.innerHTML=A.dims(r.dimensions);const c=w.firstElementChild;c.id='dimcard';
+ if(qLevel(r)>=2&&r.dimensions.available)c.insertAdjacentHTML('afterbegin',`<p class="note" style="margin:0 0 10px"><b>${esc(tr('Photo quality'))}: ${esc(tr(QL[qLevel(r)]))}.</b> <span>The 90% ranges were checked on usable photos; with this photo the real error can be larger than shown.</span></p>`);const s=$('#dimslot')||$('#dimcard');s?s.replaceWith(c):out.appendChild(c);typeChip(r)}
 function fail(msg,net){A.fail(msg);const c=out.firstElementChild;
  c.insertAdjacentHTML('beforeend',`<div class="btns" style="margin-top:12px"><button type="button" class="btn primary" data-a="retry">Try again</button>${net?'<button type="button" class="btn ghost" data-a="later">Send later</button>':'<button type="button" class="btn ghost" data-a="new">New photo</button>'}</div>`);
  c.querySelector('[data-a=retry]').onclick=()=>lastBlob&&send();
@@ -527,12 +581,13 @@ function addAct(t,l,a){const nc=$('#nextcard');if(!nc)return;nc.hidden=false;con
  li.innerHTML=`<span>${t}</span>${l?`<button type="button" class="minibtn${a==='next'||a==='retake'?' pri':''}" data-a="${a}">${l}</button>`:''}`;
  nc.querySelector('.acts').appendChild(li);li.querySelector('button')?.addEventListener('click',()=>act(a))}
 function afterType(r,replay){step(3);const N=D.names,top=r.ranked[0][0],sec=r.ranked[1][0],close=r.ranked[0][1]-r.ranked[1][1]<.2;
- out.firstElementChild.insertAdjacentHTML('afterend','<section class="card" id="nextcard" hidden><div class="kicker">Next steps</div><ul class="acts"></ul></section>');
+ out.querySelector('.card.result').insertAdjacentHTML('afterend','<section class="card" id="nextcard" hidden><div class="kicker">Next steps</div><ul class="acts"></ul></section>');
+ qBand(r);
  if(r.status==='bad_photo')addAct('Retake from below with the whole slope in view.','Retake','retake');
  else if(r.status==='uncertain')addAct(r.family?`Answer the questions or tick the signs below to tell <b>${esc(N[top])}</b> from <b>${esc(N[sec])}</b>.`:'Not sure. Answer the questions below, or take a second photo from another spot.','Another photo','retake');
- if(r.status!=='bad_photo'&&(r.status==='uncertain'||close))ask(r,replay);
+ if(r.status==='bad_photo'||r.status==='uncertain'||close)ask(r,replay);
  ticks(r);reportBar();
- if(!replay){buzz(r.status==='ok'?40:[40,80,40]);say(r.status==='bad_photo'?tr('Please retake the photo.'):(r.status==='uncertain'?tr('Uncertain. Most likely')+' ':'')+tr(N[r.label])+', '+Math.round(r.confidence*100)+' %.')}}
+ if(!replay){buzz(r.status==='ok'?40:[40,80,40]);say(r.status==='bad_photo'?tr('Very poor photo. Best guess')+' '+tr(N[r.label])+'. '+tr('Please retake the photo.'):(r.status==='uncertain'?tr('Uncertain. Most likely')+' ':'')+tr(N[r.label])+', '+Math.round(r.confidence*100)+' %.')}}
 function afterDims(r,replay){const d=r.dimensions;if(!d)return;const c=findDims();if(c)c.id='dimcard';
  if(!d.available){if(r.status!=='bad_photo')addAct(esc(d.reason||'No size estimate for this photo.'),'','');return}
  const ce=d.cut_edges||[];if(ce.length)addAct(cutMsg(ce),'Retake','retake');
@@ -622,7 +677,8 @@ function reportBar(){const b=document.createElement('div');b.className='btns';b.
 const RCSS='body{font:15px/1.5 system-ui,sans-serif;max-width:780px;margin:24px auto;padding:0 16px;color:#13201c}h1{font-size:1.35rem}h2{font-size:1.05rem;margin-top:22px}table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #ddd;padding:6px;text-align:left;vertical-align:top}img{max-width:100%;border-radius:8px;margin:8px 0}.m{color:#5c6b65;font-size:.9rem}';
 function metaHTML(mt){return `<p class="m">${new Date(mt.t).toLocaleString()}${mt.gps?` · <a href="https://www.openstreetmap.org/?mlat=${mt.gps.lat}&mlon=${mt.gps.lon}#map=17/${mt.gps.lat}/${mt.gps.lon}">${mt.gps.lat.toFixed(5)}, ${mt.gps.lon.toFixed(5)}</a> (±${Math.round(mt.gps.acc)} m)`:''}${mt.weather?' · '+esc(mt.weather):''}${mt.shot?' · '+esc(mt.shot):''}${mt.set?' · '+esc(mt.set):''}${mt.dist?' · distance '+mt.dist+' m':''}</p>${mt.notes?`<p><b>Notes:</b> ${esc(mt.notes)}</p>`:''}`}
 function resultHTML(r,photo){const N=D.names,d=r.dimensions;let h=photo?`<img src="${photo}" alt="photo">`:'';
- h+=`<h2>Type</h2><p><b>${r.status==='bad_photo'?'Photo not usable: retake':esc(N[r.label])}</b> · ${Math.round(r.confidence*100)}% (${esc(r.status)}${r.family?', '+esc(r.family)+' family':''})</p><table>${r.ranked.map(([c,p])=>`<tr><td>${esc(N[c])}</td><td>${Math.round(p*100)}%</td></tr>`).join('')}</table>`;
+ const ql=qLevel(r);h+=`<h2>Photo quality</h2><p><b>${QL[ql]}</b>${r.quality&&r.quality.issues.length?': '+r.quality.issues.map(x=>esc(x[0])+(x[2]===2?' (serious)':'')).join(', '):''}${r.status==='bad_photo'?' · photo check failed: the result is not reliable':''}</p>`;
+ h+=`<h2>Type</h2><p><b>${esc(N[r.label])}</b> · ${Math.round(r.confidence*100)}% (${esc(r.status)}${r.family?', '+esc(r.family)+' family':''})</p><table>${r.ranked.map(([c,p])=>`<tr><td>${esc(N[c])}</td><td>${Math.round(p*100)}%</td></tr>`).join('')}</table>`;
  if(r.answers&&r.answers.length)h+=`<h2>Field questions</h2><table>${r.answers.map(a=>`<tr><td>${esc(a.q)}</td><td>${a.a}</td></tr>`).join('')}</table>${r.fieldRanked?`<p>With these answers: <b>${esc(N[r.fieldRanked[0][0]])}</b> ${Math.round(r.fieldRanked[0][1]*100)}%</p>`:''}`;
  if(r.signs)h+=`<h2>Signs checked on site</h2><table>${Object.entries(r.signs).map(([c,v])=>v.map((on,i)=>`<tr><td>${esc(D.info[c].check[i])}</td><td>${on?'seen':'not seen'}</td></tr>`).join('')).join('')}</table>`;
  if(d&&d.available)h+=`<h2>Estimated dimensions</h2>${d.overlay?`<img src="${d.overlay}" alt="measured outline">`:''}<table><tr><th>Measure</th><th>Value</th><th>90% range</th></tr>${d.measures.map(m=>`<tr><td>${esc(m.name)}</td><td>${num(m.value)} ${m.unit}</td><td>${num(m.range[0])} – ${num(m.range[1])}</td></tr>`).join('')}
@@ -643,7 +699,7 @@ async function siteReport(){let s=null;try{s=JSON.parse(sess.get('site')||'null'
  for(const x of rs)h+=`<hr><h2>${esc(x.meta.shot||'Photo')}</h2>${metaHTML(x.meta)}${resultHTML(x.r,x.photo)}`;
  download(fname('site',mt.t),`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Landslide site survey</title><style>${RCSS}</style></head><body>${h}${foot('')}</body></html>`)}
 async function share(){if(!cur)return;const r=cur,mt=curMeta||meta(),N=D.names,d=r.dimensions;
- const txt=[`Landslide observation, ${new Date(mt.t).toLocaleString()}`,r.status==='bad_photo'?'Photo not usable':`${N[r.label]} (${Math.round(r.confidence*100)}%, ${r.status})`,
+ const txt=[`Landslide observation, ${new Date(mt.t).toLocaleString()}`,`${N[r.label]} (${Math.round(r.confidence*100)}%, ${r.status})`,`Photo quality: ${QL[qLevel(r)]}${r.status==='bad_photo'?' (not reliable)':''}`,
   ...(d&&d.available?d.measures.slice(0,4).map(m=>`${m.name}: ${num(m.value)} ${m.unit} (90%: ${num(m.range[0])}-${num(m.range[1])})`):[]),
   mt.gps?`Location: https://www.openstreetmap.org/?mlat=${mt.gps.lat}&mlon=${mt.gps.lon}`:'',mt.weather?'Weather: '+mt.weather:'',mt.notes?'Notes: '+mt.notes:'','Decision support only; confirm with a geologist.'].filter(Boolean).join('\n');
  try{const f=lastBlob?new File([lastBlob],'landslide.jpg',{type:'image/jpeg'}):null;
@@ -677,21 +733,21 @@ function siteId(){let s=sess.get('siteId');if(!s){s=String(Date.now());sess.set(
 async function saveResult(id,r,mt,photo,queued,blob,site){await safe(()=>DB.put('results',{id,r,meta:mt,photo,blob}));
  const d=r.dimensions,m=d&&d.available&&d.measures[0],old=store.get('hist',[]),prev=old.find(o=>o.id===id);
  const th=prev&&prev.th?prev.th:await urlShrink(photo,96),h=old.filter(o=>o.id!==id);
- h.unshift({id,t:mt?.t||id,label:r.label,status:r.status,conf:r.confidence,shot:mt?.shot||'',size:m?m.name.split(' (')[0]+' '+num(m.value)+' '+m.unit:'',th,queued:!!queued,site:site||(mt&&mt.mode==='survey'?siteId():'')});
+ h.unshift({id,t:mt?.t||id,label:r.label,status:r.status,q:qLevel(r),conf:r.confidence,shot:mt?.shot||'',size:m?m.name.split(' (')[0]+' '+num(m.value)+' '+m.unit:'',th,queued:!!queued,site:site||(mt&&mt.mode==='survey'?siteId():'')});
  h.sort((a,b)=>b.t-a.t);const keep=h.slice(0,20);store.set('hist',keep);
  const ids=new Set(keep.map(o=>o.id));for(const x of await safe(()=>DB.all('results'),[]))if(!ids.has(x.id))safe(()=>DB.del('results',x.id));drawHist()}
 function drawHist(){const h=store.get('hist',[]),el=$('#history');if(!h.length){el.innerHTML='';return}
- el.innerHTML=`<section class="card"><div class="kicker">Recent observations (this phone)</div><ul class="hist">${h.map(o=>`<li ${o.id?`data-id="${o.id}" role="button" tabindex="0"`:''}>${o.th?`<img src="${o.th}" alt="">`:'<span></span>'}<span><b>${o.status==='bad_photo'?'Retake needed':esc(D.names[o.label]||o.label)}</b>${o.status==='uncertain'?' <span>(uncertain)</span>':''}${o.queued?' <span>(sent later)</span>':''}<br>${esc([o.shot,o.size].filter(Boolean).join(' · '))}</span><span>${Math.round(o.conf*100)}%<br><small>${new Date(o.t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</small></span></li>`).join('')}</ul></section>`;
+ el.innerHTML=`<section class="card"><div class="kicker">Recent observations (this phone)</div><ul class="hist">${h.map(o=>`<li ${o.id?`data-id="${o.id}" role="button" tabindex="0"`:''}>${o.th?`<img src="${o.th}" alt="">`:'<span></span>'}<span><b>${esc(D.names[o.label]||o.label)}</b>${o.q>=2?` <span class="sev s${o.q-1}">${o.q===3?'Very poor photo':'Poor photo'}</span>`:''}${o.status==='uncertain'?' <span>(uncertain)</span>':''}${o.queued?' <span>(sent later)</span>':''}<br>${esc([o.shot,o.size].filter(Boolean).join(' · '))}</span><span>${Math.round(o.conf*100)}%<br><small>${new Date(o.t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</small></span></li>`).join('')}</ul></section>`;
  el.querySelectorAll('li[data-id]').forEach(li=>{const go=()=>openHist(+li.dataset.id);li.onclick=go;li.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();go()}}})}
 async function openHist(id){const x=await safe(()=>DB.get('results',id),null);if(!x){toast('This result is no longer stored on the phone.');return}
  cur=x.r;curMeta=x.meta;curPhoto=x.photo||'';lastBlob=x.blob||null;lastDist=x.meta&&x.meta.dist||null;job=null;
- $('#prev').src=curPhoto;$('#fig').style.display=curPhoto?'block':'none';A.render(cur);typeChip(cur);afterType(cur,true);if(cur.dimensions)afterDims(cur,true);
+ $('#prev').src=curPhoto;$('#fig').style.display=curPhoto?'block':'none';photoQ={level:0,issues:[]};A.render(cur);typeChip(cur);afterType(cur,true);if(cur.dimensions)afterDims(cur,true);
  $('#fig').scrollIntoView({behavior:'smooth',block:'start'})}
-drawHist();A._metrics=metrics;A._judge=judge;A._fuse=fuse;A._flush=flush;A._q=()=>safe(()=>DB.all('queue'),[]);A._st=()=>({flushing,done:[...done],shot,mode,curId:cur&&cur.__id,metaShot:curMeta&&curMeta.shotId,site:!!sess.get('site')});   // exposed for tests
+drawHist();A._metrics=metrics;A._judge=judge;A._grade=grade;A._hold=hold;A._live=liveShow;A._fuse=fuse;A._flush=flush;A._q=()=>safe(()=>DB.all('queue'),[]);A._st=()=>({flushing,done:[...done],shot,mode,curId:cur&&cur.__id,metaShot:curMeta&&curMeta.shotId,site:!!sess.get('site')});   // exposed for tests
 /* ---------- shared with the overlapping-set module (src/pano.py) ---------- */
 function runSet(r,blob,g,label){lastBlob=blob;lastSrc=g?'cam':'gal';lastTilt=g?{g}:null;const dv=parseFloat(dist.value);lastDist=dv>=1&&dv<=3000?dv:null;
  curMeta=meta();curMeta.set=label||'';cur=r;job=r.job||null;const fig=$('#fig');$('#prev').src=URL.createObjectURL(blob);fig.style.display='block';
- if(r.ms)store.set('etaT',ema('etaT',r.ms,4000));A.render(r);afterType(r);if(job)measure();else finish(r)}
+ if(r.ms)store.set('etaT',ema('etaT',r.ms,4000));photoQ={level:0,issues:[]};withQ(r);A.render(r);afterType(r);sizes(r)}
 A._g={say,buzz,toast,tr,store,sess,step,safety,openFinder,closeFinder,openCamera,ICO,LIVE,prog,post,busy,cancelled,params,gx,runSet,fail,RX,out,vf,vid,
  ori:()=>ori,mode:()=>mode,shoot:()=>shoot(),setMode:m=>{mode=m;store.set('mode',m);drawMode()},abort:()=>xhr&&xhr.abort(),camIn,galIn,ema};
 A.pano&&A.pano.init();
@@ -707,6 +763,12 @@ def data():
             # live steadiness: mean |grey change| between frames 0.45 s apart at 512 px. A heuristic (no
             # labelled video exists to calibrate it); it only delays the green "ready" ring, never the shutter.
             "steadyMax": 8.0,
+            # "serious" margins of the photo check (beyond the calibrated "minor" thresholds). Fixed UI steps, not
+            # calibrated on labelled data: light < 0.7 x lum_min or above halfway from lum_max to white, shadow /
+            # highlight areas 2x / 1.6x the limit, contrast < 0.65 x, sharpness < 0.4 x, sky > 75 %, short side
+            # < 480 px, roll > 25 deg, aim < -35 or > 75 deg.
+            "severe": {"lum_lo": 0.7, "lum_hi": 0.5, "dark_x": 2.0, "bright_x": 1.6, "contrast_x": 0.65,
+                       "sharp_x": 0.4, "sky": 0.75, "res": 480, "roll": 25, "elev_lo": -35, "elev_hi": 75},
             # stage starts as a fraction of the expected time of each request (type ~4 s, sizes ~28 s); the
             # expected times are learned on the phone from past requests (moving average)
             "stagesType": [[0, "Checking it is a usable slope photo"], [0.4, "Identifying the landslide type"]],

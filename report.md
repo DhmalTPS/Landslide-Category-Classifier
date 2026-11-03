@@ -295,7 +295,8 @@ load, allow Python through Windows Firewall for private networks.
 **Flow:**
 1. "Take photo" opens the camera. The browser fixes the rotation and shrinks the photo before
    upload.
-2. The **photo check** runs (reject if below 50% usable).
+2. The **photo check** runs. Below 50% usable the result is still shown in full, marked "not
+   reliable", with sizes on one tap (see *Photo quality* below).
 3. The **type** is shown with all probabilities.
 4. Below 0.6 confidence the app says **uncertain** and shows the top two. If both are flows (or
    both slides) and together reach 0.6, it gives the family.
@@ -319,11 +320,23 @@ The guidance follows the user's journey (stepper: Safe spot → Frame → Check 
 |---|---|
 | First use | 5-card illustrated tour (what the app does, where to stand, framing, light/level, reading results); skippable, replayable from Help |
 | Before capture | Per-session safety checklist (4 items, all must be ticked) before the camera opens. Single-photo or **site-survey** mode with a 4-shot list (whole slope, scarp, deposit close-up, scale object). Distance helper (pace count × stride, rangefinder, Maps) with range validation |
-| Capture | Live viewfinder (needs `--https` or localhost): scarp/toe framing bands per shot, rule-of-thirds grid, level line and aim angle from the phone sensors, live light/haze/sharpness/steadiness pills, a green ready ring, haptics, optional voice. Falls back to the phone camera app |
-| Check | **Instant on-phone photo check** before upload: light, shadows, highlights, haze, blur, resolution, level, aim. Only warns ("Retake" / "Analyse anyway"); a clean photo goes straight to analysis |
+| Capture | Live viewfinder (needs `--https` or localhost): scarp/toe framing bands per shot, rule-of-thirds grid, level line and aim angle from the phone sensors, live pills coloured by severity (green / amber minor / red serious), a **photo-quality meter** (Good / Fair / Poor / Very poor), one instruction at a time with a direction arrow for aim and framing, a ring that is green only when nothing is wrong, haptics, optional voice. Level and instruction change only after two readings in a row agree, so the hints do not flicker. The shutter always works. Falls back to the phone camera app |
+| Check | **Instant on-phone photo check** before upload: light, shadows, highlights, haze, blur, resolution, level, aim, each graded minor or serious. Good and Fair photos go straight to analysis; Poor and Very poor ones show the graded list with "Retake" and "Analyse anyway" (one tap each) |
 | Waiting | Upload %, then 5 stages paced by the learned server time (moving average of past runs), field tips, cancel, 4-minute timeout |
 | Result | **Next steps** card (retake; add the distance and re-measure the same photo; scale shot when depth trust is low; deposit close-up when grain size is unreadable; next survey shot). Tickable on-site signs with a tally; when uncertain, the top-2 types' signs are compared side by side. A "what do these numbers mean" glossary, plus a spoken summary |
+| Photo quality | A band above every result: Good / Fair / Poor / Very poor with the reasons, a Retake button from Poor on, and the line "nothing is adjusted to look better". The result itself is never hidden: a photo that fails the server's photo check still shows its type, all probabilities, the field questions and signs, marked "not reliable", and sizes on one tap with a caveat that the 90% ranges were checked on usable photos only. History, reports and the shared text carry the quality |
 | Always | Help sheet (photo guide, safety, glossary, limits, settings), recent observations kept on the phone (8, with thumbnails), offline banner, retry, sun mode (high contrast), keyboard/Esc and screen-reader labels |
+
+**How the photo quality is graded.** Each check is *minor* when the photo is beyond the 0.5th / 99.5th
+percentile of the training photos (the calibrated thresholds in `src/photo_check.json`) and *serious* when it is far outside
+(fixed margins in `guide.data()["severe"]`, e.g. light below 0.7x the minimum or sharpness below 0.4x; these
+margins are UI steps, not fitted to labelled data). Good = no issue; Fair = 1-2 minor; Poor = 1 serious or 3+
+minor; Very poor = 2+ serious, or the server's photo check below 50% usable. Results are shown for every
+level because the server's photo check wrongly refuses about 17% of usable test photos (system test above):
+hiding those answers would lose good results, while the band keeps the warning in front of the user.
+Headless browser tests (Edge, English and Hindi, 28 checks each, mocked server) cover the four levels,
+the hysteresis, the result and sizes for a failed photo check, history tags and the live meter, arrow and
+shutter ring.
 
 **Photo-check thresholds are data-driven** (`tools/calibrate_photo_check.py` → `src/photo_check.json`):
 - six pixel statistics on the photo scaled to 512 px: brightness, crushed shadows, blown highlights, contrast, sharpness, and the smooth blue/bright **sky fraction**;

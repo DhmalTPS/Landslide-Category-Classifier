@@ -110,8 +110,11 @@ See `results/licences.md`.
 `src/guide.py` adds:
 - a first-run tour and a per-session safety checklist;
 - single-photo or 4-shot site-survey mode;
-- a live framing and level viewfinder;
-- an instant on-phone photo check;
+- a live framing and level viewfinder with a photo-quality meter (Good / Fair / Poor / Very poor), one
+  instruction at a time and a direction arrow;
+- an instant on-phone photo check, each problem graded minor or serious;
+- results that are always shown, even for a photo that fails the photo check: a quality band above the
+  result says how reliable it is, and nothing is adjusted to look better;
 - staged progress, "next steps" after each result, tickable on-site signs and a help sheet with a glossary.
 
 It also adds:

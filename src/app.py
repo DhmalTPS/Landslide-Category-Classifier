@@ -394,7 +394,7 @@ def make_handler(pred, vlm, save, max_saved=2000, token=None, dim=None):
                 if kw.get("metric_points"):
                     r["set"]["stereo_points"] = kw["metric_points"]["n"]
                     r["set"]["stereo_pairs"] = len(kw["metric_points"]["pairs"])
-                r["measurable"] = bool(dim) and r["status"] != "bad_photo"
+                r["measurable"] = bool(dim)   # also for a failed photo check: the phone offers sizes, marked not reliable
                 if r["measurable"]:
                     r["job"] = uuid.uuid4().hex[:16]
                     jobs[r["job"]] = (img, raw, {k: r.get(k) for k in ("label", "ranked", "status", "family")}, f35, kw)
@@ -464,7 +464,7 @@ def make_handler(pred, vlm, save, max_saved=2000, token=None, dim=None):
                     r = pred([img])[0]
                     if vlm:
                         r["vlm"] = vlm(img)
-                    r["measurable"] = bool(dim) and r["status"] != "bad_photo"
+                    r["measurable"] = bool(dim)   # also for a failed photo check: the phone offers sizes, marked not reliable
                     if r["measurable"] and stage == "type":
                         r["job"] = uuid.uuid4().hex[:16]
                         jobs[r["job"]] = (img, raw, {k: r.get(k) for k in ("label", "ranked", "status", "family")}, self._f35())

@@ -146,6 +146,7 @@ font-size:.8rem;font-weight:650;color:#fff;background:rgba(10,24,20,.62);backdro
 .fill{height:100%;border-radius:99px;background:var(--g-ground);transform-origin:left;animation:grow .7s cubic-bezier(.2,.8,.2,1)}
 .fill.signal{background:var(--g-signal)}
 @keyframes grow{from{transform:scaleX(0)}}
+.result.lowq{border:2px dashed #d2452b}.result.lowq .fill{background:#d2452b}
 .note{margin:14px 0 0;padding:12px 14px;border-radius:12px;background:var(--surface-2);color:var(--ink-2);font-size:.93rem;border:1px solid var(--line)}
 .probs{display:grid;gap:9px;margin-top:4px}
 .prob{display:grid;grid-template-columns:28px 1fr 46px;gap:10px;align-items:center}
@@ -166,6 +167,7 @@ font-size:.8rem;font-weight:650;color:#fff;background:rgba(10,24,20,.62);backdro
 .safety p{margin:0;color:var(--ink-2)}
 .bad::before{content:"";position:absolute;inset:0 auto 0 0;width:5px;background:var(--g-signal)}
 .bad{position:relative;overflow:hidden}
+.chip.bad{position:absolute;overflow:visible}.chip.bad::before{display:none}
 ol.steps{margin:.4rem 0 0;padding-left:1.2rem;color:var(--ink-2)}ol.steps li{margin:.25rem 0}
 .skel{height:14px;border-radius:8px;background:linear-gradient(90deg,var(--line),var(--surface-2),var(--line));background-size:200% 100%;animation:sh 1.2s ease-in-out infinite;margin:10px 0}
 @keyframes sh{to{background-position:-200% 0}}
@@ -208,23 +210,20 @@ function dims(d){
  return h}
 function render(r){
  const n=D.names;let h='';
- if(r.status==='bad_photo'){
-  setChip('bad','Retake photo');
-  h=`<section class="card result bad" aria-live="polite"><div class="rhead"><div class="glyph signal">${G.bad_photo}</div><div>
-   <div class="kicker">Photo check</div><div class="title">Retake the photo</div>
-   <div class="hungr">This does not look like a ground photo of a slope (${pct(r.usable)} usable)</div></div></div>
-   <ol class="steps">${D.tips.map(t=>`<li>${esc(t)}</li>`).join('')}</ol>
-   <p class="note">Best guess anyway: <b>${esc(n[r.label])}</b> (${pct(r.confidence)}). Not reliable for this photo.</p></section>`;
- }else{
+ {
+  // a photo that fails the photo check still gets its full result, shown as computed (nothing adjusted),
+  // clearly marked as not reliable; the quality band above it (guide.py) says why and how to fix it
+  const bp=r.status==='bad_photo';
   const i=D.info[r.label],unsure=r.status==='uncertain',fam=unsure&&r.family?D.families[r.family]:null;
-  const gname=fam?D.familyGlyph[r.family]:r.label, sig=unsure&&!fam;
-  setChip(sig?'signal':'', fam?'Landslide family':unsure?'Uncertain':'Landslide type');
-  const kicker=fam?'Landslide family':unsure?'Uncertain — most likely':'Landslide type';
+  const gname=fam?D.familyGlyph[r.family]:r.label, sig=(unsure&&!fam)||bp;
+  setChip(bp?'bad':sig?'signal':'', bp?'Not reliable':fam?'Landslide family':unsure?'Uncertain':'Landslide type');
+  const kicker=bp?'Best guess · photo check failed':fam?'Landslide family':unsure?'Uncertain — most likely':'Landslide type';
   const conf=fam?r.ranked[0][1]+r.ranked[1][1]:r.confidence;
   let note='';
-  if(fam) note=`<p class="note">Clearly a ${esc(r.family)}; the exact type is close between <b>${esc(n[r.ranked[0][0]])}</b> and <b>${esc(n[r.ranked[1][0]])}</b>. Check the points below for both.</p>`;
+  if(bp) note=`<p class="note"><b>Not reliable.</b> <span>This does not look like a ground photo of a slope</span> (${pct(r.usable)} <span>usable</span>). <span>This is the model's own answer, not adjusted. Retake the photo before relying on it:</span></p><ol class="steps">${D.tips.map(t=>`<li>${esc(t)}</li>`).join('')}</ol>`;
+  else if(fam) note=`<p class="note">Clearly a ${esc(r.family)}; the exact type is close between <b>${esc(n[r.ranked[0][0]])}</b> and <b>${esc(n[r.ranked[1][0]])}</b>. Check the points below for both.</p>`;
   else if(unsure) note=`<p class="note">Not confident. Second choice: <b>${esc(n[r.ranked[1][0]])}</b>. Take another photo with the whole slope in view, or check the points below for both types.</p>`;
-  h=`<section class="card result" aria-live="polite"><div class="rhead"><div class="glyph ${gname==='no_landslide'?'':'signal'}">${G[gname]}</div><div>
+  h=`<section class="card result${bp?' lowq':''}" aria-live="polite"><div class="rhead"><div class="glyph ${gname==='no_landslide'?'':'signal'}">${G[gname]}</div><div>
     <div class="kicker">${kicker}</div><div class="title">${esc(fam||i.title)}</div>
     <div class="hungr">${fam?'':'Hungr et al. 2014 · '+esc(i.hungr)}</div></div></div>
     <div class="meter"><div class="row"><span>Confidence${fam?' (family)':''}</span><span class="val">${pct(conf)}</span></div>
