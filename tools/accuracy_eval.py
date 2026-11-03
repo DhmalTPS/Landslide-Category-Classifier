@@ -76,12 +76,33 @@ def embed(df, budget):
     return True
 
 
-def stack_weights(Ps, y, groups, tr, Xs, augs, Cs):
-    """Backbone weights (simplex grid, step 0.1) minimising log-loss of nested 3-fold OOF probs inside tr."""
+def inner_oof(y, groups, tr, Xs, augs, Cs):
     Q = [np.zeros((len(y), len(CLASS_NAMES))) for _ in Xs]
     for a, b in StratifiedGroupKFold(3, shuffle=True, random_state=1).split(tr, y[tr], groups[tr]):
         for j, (X, aug) in enumerate(zip(Xs, augs)):
             Q[j][tr[b]] = proba(fit(*with_copies(X, y, tr[a], aug), Cs[j]), X[tr[b]])
+    return Q
+
+
+def class_offsets(P, y, idx, sweeps=2):
+    """Per-class log-offsets b maximising macro-F1 of argmax(log P + b) on rows idx (coordinate ascent)."""
+    L = np.log(np.clip(P[idx], 1e-9, 1))
+    b = np.zeros(L.shape[1])
+    score = lambda bb: macro(y[idx], LABELS[(L + bb).argmax(1)])
+    best = score(b)
+    for _ in range(sweeps):
+        for c in range(len(b)):
+            for v in np.arange(-1.0, 1.01, 0.1):
+                bb = b.copy(); bb[c] = v
+                sc = score(bb)
+                if sc > best + 1e-9:
+                    best, b = sc, bb
+    return b
+
+
+def stack_weights(Ps, y, groups, tr, Xs, augs, Cs, Q=None):
+    """Backbone weights (simplex grid, step 0.1) minimising log-loss of nested 3-fold OOF probs inside tr."""
+    Q = Q if Q is not None else inner_oof(y, groups, tr, Xs, augs, Cs)
     best, bw = 1e9, None
     grid = [(a / 10, b / 10, 1 - a / 10 - b / 10) for a in range(11) for b in range(11 - a)]
     for w in grid:
@@ -101,7 +122,8 @@ def evaluate(df):
         M = np.stack([mc[i] for i in ids])
         Xs.append(X); augs.append(aug); Ms.append((X + 5 * M) / 6)       # full photo + 5 crops, equal weight
     n, k = len(y), len(CLASS_NAMES)
-    P = {v: np.zeros((n, k)) for v in ("base", "logpool", "stack", "concat", "mc_test", "mc_both")}
+    P = {v: np.zeros((n, k)) for v in ("base", "logpool", "stack", "concat", "mc_test", "mc_both",
+                                        "aug_test", "mc_aug", "offsets", "mc_aug_offsets")}
     log = {"C": [], "stack_w": []}
     for f, (tr, te) in enumerate(StratifiedGroupKFold(5, shuffle=True, random_state=0).split(ids, y, groups)):
         t = time.time()
@@ -111,7 +133,20 @@ def evaluate(df):
         P["base"][te] = np.mean(parts, 0)
         lp = np.exp(np.mean([np.log(np.clip(q, 1e-9, 1)) for q in parts], 0))
         P["logpool"][te] = lp / lp.sum(1, keepdims=True)
-        w = stack_weights(parts, y, groups, tr, Xs, augs, Cs)
+        Q = inner_oof(y, groups, tr, Xs, augs, Cs)
+        w = stack_weights(parts, y, groups, tr, Xs, augs, Cs, Q)
+        # TTA over the cached phone-style copies (+ multi-crop): average probabilities over the views
+        def tta(m, X, aug, M=None):
+            views = [X[te]] + [A[te] for A in aug if not np.isnan(A[te]).any()] + ([M[te]] if M is not None else [])
+            return np.mean([proba(m, v) for v in views], 0)
+        P["aug_test"][te] = np.mean([tta(m, X, aug) for m, X, aug in zip(heads, Xs, augs)], 0)
+        P["mc_aug"][te] = np.mean([tta(m, X, aug, M) for m, X, aug, M in zip(heads, Xs, augs, Ms)], 0)
+        # per-class decision offsets fitted on the inner OOF probabilities (never on the outer fold)
+        bo = class_offsets(np.mean(Q, 0), y, tr)
+        sm = lambda Pv: (lambda Z: Z / Z.sum(1, keepdims=True))(np.exp(np.log(np.clip(Pv, 1e-9, 1)) + bo))
+        P["offsets"][te] = sm(P["base"][te])
+        P["mc_aug_offsets"][te] = sm(P["mc_aug"][te])
+        log.setdefault("offsets", []).append([round(float(v), 2) for v in bo])
         P["stack"][te] = sum(wi * q for wi, q in zip(w, parts))
         Xc = [np.concatenate([X for X in Xs], 1)]
         ac = [np.concatenate([a[j] for a in augs], 1) for j in range(len(augs[0]))]

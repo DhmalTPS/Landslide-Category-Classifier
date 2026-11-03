@@ -133,6 +133,8 @@ In the app, choose **photo set**, then:
 - **Turn on the spot:** the photos are joined into one picture.
 - **Walk along:** the photos are analysed together. Type the normal steps between photos to get real
   sizes from triangulation.
+- **Auto sweep:** switch "Auto" on in the camera view, take the first photo, then turn or walk slowly.
+  The next photos are taken by themselves.
 - **Video:** pick one slow sweep from the gallery, and the phone picks sharp, overlapping frames from it.
   For a walk video, type the total steps walked during it.
 
@@ -141,6 +143,7 @@ The tools behind this (simulated sets from train photos; the test split is never
 - `tools/stereo_eval.py`: the walk-along scale.
 - `tools/focal_eval.py`: the focal length of a joined picture (`src/focal_check.json`).
 - `tools/accuracy_eval.py`: out-of-fold accuracy experiments.
+- `tools/object_prior_eval.py`: refits the known-object scale prior (`models/dimension_object_prior.json`).
 
 All of them run in resumable chunks (`--budget 540`). The results are in report.md §4.6 and §5.3.
 

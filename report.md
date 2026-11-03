@@ -271,10 +271,17 @@ column is a paired site bootstrap with a 90 % interval.
 | concatenated features | 0.707 | 0.713 | 78.8 % | 85 % / 82.8 % | +0.002 [-0.013, +0.017] |
 | multi-crop TTA, test only | 0.717 | 0.712 | 78.2 % | 74 % / 87.0 % | +0.012 [-0.004, +0.027] |
 | multi-crop TTA, train+test | 0.715 | 0.727 | 78.2 % | 74 % / 86.8 % | +0.012 [-0.004, +0.027] |
+| TTA over phone-style copies | 0.706 | 0.701 | 77.6 % | 70 % / 89.0 % | +0.001 [-0.018, +0.020] |
+| multi-crop + copies | 0.713 | 0.708 | 78.0 % | 71 % / 88.0 % | +0.008 [-0.007, +0.024] |
+| per-class offsets (nested) | 0.713 | 0.705 | 78.4 % | 72 % / 88.7 % | +0.007 [-0.018, +0.030] |
+| multi-crop + copies + offsets | 0.699 | 0.701 | 77.0 % | 70 % / 89.5 % | -0.007 [-0.039, +0.023] |
 
 Multi-crop averaging (the full photo plus 5 crops at 0.85 scale) adds about one point. Its interval still
 includes 0, and accuracy among confident answers drops slightly, so the shipped models were not changed.
 With about 590 sites, a 1-point gain is within noise; more labelled sites would settle it.
+Nine cheap levers tried on the frozen features all land within ±1.2 points of the shipped system. On
+these features, accuracy has plateaued, and the next gain has to come from more labelled sites (above
+all translational_slide and earth_mud_flow) or human-checked labels (§2).
 
 ## 5. Field app
 
@@ -395,9 +402,25 @@ The pipeline:
   synthetic pan picked 4 keyframes, none of them blurred, with overlaps of 31-72 % and the end of the
   sweep covered.
 
+- **Live auto sweep:** with "Auto" on in the set viewfinder, the shutter fires by itself after the
+  first photo, at most once every 1.2 s. Three things must hold: the overlap with the last photo is in
+  the ideal band, the frame is sharp (Laplacian variance at least 0.6 × the median of recent frames), and
+  the camera is not moving too fast. "Slow down" appears when two readings in a row show a shift of
+  more than 0.35 frame widths per second. In the headless test on frames with known overlap, the
+  shutter fired only on the sharp in-band frame: not at 95 % overlap, not on a blurred frame, and not
+  twice within 1.2 s.
+- **Known-object scale prior refit** (`tools/object_prior_eval.py`):
+  - The old prior (×1.531, sd 0.345) was fitted on 4 photos. On 83 train+val photos from 43 sites
+    with a person, car, motorcycle, bus or door, its 90 % interval covered only **62.7 %**: too narrow.
+  - The refit is a random-effects model, site-balanced, with leave-one-site-out CV. It gives ×1.83 at
+    the median scene depth of 8.3 m, slope −0.198 per log depth (farther scenes need less correction),
+    and a predictive sd of **0.536** with **94.0 %** coverage.
+  - Sizes that rely on this prior therefore get wider ranges. They are now honest. The narrow routes
+    remain the walk-along steps, a typed distance, or a known object in the photo itself.
+
 **Limitations:** all set numbers come from simulation built from real photos, not from field sets. The
-step length is assumed to be 0.75 m. Live automatic keyframe capture while filming is not built yet,
-and real phone videos have not been tested.
+step length is assumed to be 0.75 m. The auto sweep and video selection have been tested on synthetic
+frames only; real phone videos have not been tested.
 
 ## 6. Audit (2026-10-16): what a full scan found and fixed
 
