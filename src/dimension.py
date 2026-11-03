@@ -607,11 +607,16 @@ class Dimensioner:
                                          + (0.6 * fsd) ** 2))
                 scale_src = f"depth ensemble ({len(per_model)} models), focal from {focal_src}"
                 if self.obj_prior.get("n", 0) >= 4:
-                    depth = depth * self.obj_prior["factor"]
+                    fac = self.obj_prior["factor"]
+                    if self.obj_prior.get("log_depth_slope"):   # farther scenes need less correction (refit, n=83)
+                        fac = float(np.exp(np.log(fac) + self.obj_prior["log_depth_slope"]
+                                           * (np.log(np.median(depth)) - np.log(self.obj_prior["depth_ref_m"]))))
+                        fac = round(float(np.clip(fac, 0.5, 5.0)), 3)
+                    depth = depth * fac
                     # the correction replaces the ensemble's unknown bias with the object evidence's own spread
                     scale_sd = float(np.sqrt(self.obj_prior["predictive_log_sd"] ** 2 + between
                                              + (0.6 * fsd) ** 2))
-                    scale_src += f", corrected x{self.obj_prior['factor']} by known-size objects (n={self.obj_prior['n']})"
+                    scale_src += f", corrected x{fac} by known-size objects (n={self.obj_prior['n']})"
 
         # 4. geometry for the outline and its variants
         g = np.array([0.0, 1.0, 0.0])
