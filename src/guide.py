@@ -693,7 +693,7 @@ function runSet(r,blob,g,label){lastBlob=blob;lastSrc=g?'cam':'gal';lastTilt=g?{
  curMeta=meta();curMeta.set=label||'';cur=r;job=r.job||null;const fig=$('#fig');$('#prev').src=URL.createObjectURL(blob);fig.style.display='block';
  if(r.ms)store.set('etaT',ema('etaT',r.ms,4000));A.render(r);afterType(r);if(job)measure();else finish(r)}
 A._g={say,buzz,toast,tr,store,sess,step,safety,openFinder,closeFinder,openCamera,ICO,LIVE,prog,post,busy,cancelled,params,gx,runSet,fail,RX,out,vf,vid,
- ori:()=>ori,mode:()=>mode,setMode:m=>{mode=m;store.set('mode',m);drawMode()},abort:()=>xhr&&xhr.abort(),camIn,galIn,ema};
+ ori:()=>ori,mode:()=>mode,shoot:()=>shoot(),setMode:m=>{mode=m;store.set('mode',m);drawMode()},abort:()=>xhr&&xhr.abort(),camIn,galIn,ema};
 A.pano&&A.pano.init();
 const demo=new URLSearchParams(location.search).get('demo');   // demo pages show the guidance too (nothing saved)
 if(demo&&D.samples[demo]&&out.firstElementChild){cur=D.samples[demo];afterType(cur,true);if(cur.dimensions)afterDims(cur,true)}

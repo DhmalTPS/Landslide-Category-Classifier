@@ -123,6 +123,11 @@ TEXT = {
                     "पूरे वीडियो के दौरान चले सामान्य कदम (असली माप देता है; पता न हो तो खाली छोड़ें)"],
     "vid_hint": ["Tip: you can also pick one slow video sweep from the gallery; the app picks sharp, overlapping photos from it.",
                  "सुझाव: गैलरी से एक धीमा वीडियो स्वीप भी चुन सकते हैं; ऐप उसमें से साफ़, ओवरलैप वाली फ़ोटो चुन लेगा।"],
+    "auto_on": ["Auto: on", "ऑटो: चालू"], "auto_off": ["Auto: off", "ऑटो: बंद"],
+    "auto_hint": ["Auto sweep: take the first photo, then turn (or walk) slowly. Photos are taken by themselves when the overlap is right and the view is sharp.",
+                  "ऑटो स्वीप: पहली फ़ोटो लें, फिर धीरे-धीरे घूमें (या चलें)। ओवरलैप सही और दृश्य साफ़ होने पर फ़ोटो अपने आप ली जाएँगी।"],
+    "pan_fast": ["Slow down: you are moving too fast for sharp photos.", "धीरे करें: साफ़ फ़ोटो के लिए आप बहुत तेज़ घूम रहे हैं।"],
+    "pill_auto": ["Auto", "ऑटो"],
     "vid_read": ["Reading the video… {p} %", "वीडियो पढ़ा जा रहा है… {p} %"],
     "vid_done": ["{n} photos picked from the video (sharp frames with good overlap). Look at them, then press Check.",
                  "वीडियो से {n} फ़ोटो चुनी गईं (साफ़ फ़्रेम, अच्छा ओवरलैप)। उन्हें देखें, फिर जाँचें दबाएँ।"],
@@ -327,7 +332,9 @@ CSS = """
 .pstrip img{width:44px;height:33px;object-fit:cover;border-radius:5px;border:1.5px solid #fff;opacity:.9}
 .vf.pano .vfr{display:none}
 .vfb .pdone,.vfb .pdir{grid-row:1;border:0;background:rgba(0,0,0,.45);color:#fff;border-radius:99px;padding:9px 12px;font:700 .8rem inherit;cursor:pointer}
-.vfb .pdone{grid-column:3;justify-self:end;background:#2bb38a}.vfb .pdir{grid-column:1;justify-self:start;margin-left:96px}
+.vfb .pdone{grid-column:3;justify-self:end;background:#2bb38a}
+.vf .pauto{position:absolute;top:calc(56px + env(safe-area-inset-top));right:12px;border:0;border-radius:99px;padding:7px 12px;background:rgba(0,0,0,.5);color:#fff;font:700 .78rem inherit;cursor:pointer}
+.vf .pauto.on{background:#2bb38a}.vf:not(.pano) .pauto{display:none}.vfb .pdir{grid-column:1;justify-self:start;margin-left:96px}
 .pflash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}.pflash.on{opacity:.55;transition:none}
 """
 
@@ -378,7 +385,7 @@ async function add(file,t,src,live){if(S.items.length>=P.max){g.toast(L('max',{n
 function estimate(){S.est=[];for(let k=0;k+1<S.items.length;k++)S.est.push(match(S.items[k].sig,S.items[k+1].sig));
  const e=S.est.find(x=>x&&!x.orient&&x.score>.3);if(e&&!S.dir)S.dir=Math.sign(e.dx)||1}
 function remove(id){S.items=S.items.filter(i=>i.id!==id);S.rep=null;estimate();render();const c=$('#ovcard');if(c)c.remove()}
-function clearSet(){S.items=[];S.rep=null;S.est=[];S.dir=0;S.vidT=0;render();$('#ovcard')?.remove();if($('.pgide'))drawGuide()}
+function clearSet(){live.dx=null;S.items=[];S.rep=null;S.est=[];S.dir=0;S.vidT=0;render();$('#ovcard')?.remove();if($('.pgide'))drawGuide()}
 
 /* ---------- video (feature 3): keyframes picked on the phone, sent as a normal photo set ---------- */
 function sharp(src){const w0=src.videoWidth||src.width,h0=src.videoHeight||src.height,W=160,H=Math.max(8,Math.round(W*h0/w0));
@@ -467,10 +474,12 @@ function apply(){const on=want;$('.pgide').hidden=!on;$('#pano').hidden=!on;g.ga
 
 /* ---------- live camera: ghost of the last photo, target line, overlap meter ---------- */
 let ghost=null,tgt=null,meter=null,strip=null,flash=null,last=null;
-function finder(on){const vf=g.vf;vf.classList.toggle('pano',on);vf.querySelectorAll('.pghost,.ptarget,.pmeter,.pstrip,.pflash,.pdone,.pdir').forEach(e=>e.remove());last=null;if(!on){render();return}
+function finder(on){const vf=g.vf;vf.classList.toggle('pano',on);vf.querySelectorAll('.pghost,.ptarget,.pmeter,.pstrip,.pflash,.pdone,.pdir,.pauto').forEach(e=>e.remove());last=null;if(!on){render();return}
  vf.querySelector('video').insertAdjacentHTML('afterend','<div class="pghost"><img alt=""></div>');
  vf.insertAdjacentHTML('beforeend',`<div class="ptarget"><span>${esc(L('target'))}</span></div><div class="pmeter"><div class="z"></div><div class="v"></div></div><div class="pstrip"></div><div class="pflash"></div>`);
- vf.querySelector('.vfb').insertAdjacentHTML('beforeend',`<button type="button" class="pdir" aria-label="${esc(L('dir'))}"></button><button type="button" class="pdone"></button>`);
+ vf.querySelector('.vfb').insertAdjacentHTML('beforeend',`<button type="button" class="pdir" aria-label="${esc(L('dir'))}"></button><button type="button" class="pdone"></button><button type="button" class="pauto" aria-pressed="false"></button>`);
+ const au=vf.querySelector('.pauto'),drawAuto=()=>{au.textContent=L(S.auto?'auto_on':'auto_off');au.setAttribute('aria-pressed',!!S.auto);au.classList.toggle('on',!!S.auto)};
+ au.onclick=()=>{S.auto=!S.auto;g.store.set('pauto',S.auto);drawAuto();if(S.auto)g.say(L('auto_hint'))};drawAuto();live.sh=[];live.t=0;live.dx=null;
  ghost=vf.querySelector('.pghost img');tgt=vf.querySelector('.ptarget');meter=vf.querySelector('.pmeter');strip=vf.querySelector('.pstrip');flash=vf.querySelector('.pflash');
  vf.querySelector('.pdone').onclick=()=>{g.closeFinder();$('#pano .tray')?.scrollIntoView({behavior:'smooth',block:'nearest'})};
  vf.querySelector('.pdir').onclick=()=>{S.dir=(S.dir||1)*-1;layout()};
@@ -487,8 +496,17 @@ function layout(est){if(!ghost)return;const n=S.items.length,prev=S.items[n-1],v
  const e=est&&!est.orient&&est.score>.3?est:null,dx=e?e.dx:dir*(1-mid),dy=e?e.dy:0;
  ghost.style.transform=`translate(${-dx*b.dw}px,${-dy*b.dh}px)`;ghost.classList.toggle('lost',!e);
  meter.querySelector('.v').style.left=(e?Math.min(1,Math.max(0,e.ov)):0)*100+'%';meter.querySelector('.v').style.opacity=e?1:.3}
+const live={sh:[],t:0,dx:null,at:0,busy:false,fastN:0};
+// auto sweep (feature 3, live): fire the shutter when the overlap with the last photo is in the ideal band, the
+// frame is sharp (Laplacian variance >= 0.6 x median of recent frames) and the camera is not moving too fast
+function autoShot(e,shv,fast){const B=P.bands[S.kind],now=Date.now();
+ if(!S.auto||live.busy||fast||!S.items.length||S.items.length>=P.max||now-live.at<1200||!e||e.orient||e.score<.3)return false;
+ const med=live.sh.slice().sort((a,b)=>a-b)[Math.floor(live.sh.length/2)]||0;
+ if(e.ov<B.ideal[0]||e.ov>B.ideal[1]||live.sh.length<3||shv<.6*med)return false;
+ live.at=now;live.busy=true;Promise.resolve(g.shoot()).finally(()=>{live.busy=false});return true}
 function tick(vid,t){const n=S.items.length,first=S.items[0],turn=S.kind==='turn',dir=S.dir||1,dw=L(dir<0?'left':'right'),back=L(dir<0?'right':'left');
  const out={bad:[],pills:[`<span class="ok">${esc(L('pill_n',{n}))}</span>`],good:null};
+ if(S.auto)out.pills.push(`<span class="ok">${esc(L('pill_auto'))}</span>`);
  if(!n){out.good=L(turn?'hint_first_turn':'hint_first_walk');layout();return out}
  const e=match(S.items[n-1].sig,sig(vid));last=e;layout(e);
  if(!e||e.orient||e.score<.3){out.pills.unshift(`<span class="warn">${esc(L('pill_ovq'))}</span>`);out.bad.push(['Overlap',turn?L('lost_turn',{k:n,d:back}):L('lost_walk',{k:n})])}
@@ -496,6 +514,11 @@ function tick(vid,t){const n=S.items.length,first=S.items[0],turn=S.kind==='turn
   if(e.ov>B.ideal[1]+.08)out.bad.push(['Overlap',turn?L('more_turn',{d:dw,p}):L('more_walk',{p})]);
   else if(e.ov<B.ideal[0])out.bad.push(['Overlap',turn?L('less_turn',{d:back,p}):L('less_walk',{p})]);
   else out.good=L('good_ov',{p})}
+ // pan speed: change of the estimated shift between ticks (fraction of the width per second)
+ const now=Date.now(),shv=sharp(vid);live.sh.push(shv);if(live.sh.length>8)live.sh.shift();let fast=false;
+ if(e&&!e.orient&&e.score>.3){if(live.dx!=null&&live.t){const sp=Math.abs(e.dx-live.dx)/Math.max(.05,(now-live.t)/1000);fast=sp>.35?++live.fastN>=2:(live.fastN=0,false)}live.dx=e.dx}else live.dx=null;
+ live.t=now;if(fast)out.bad.unshift(['Speed',L('pan_fast')]);
+ out.auto=autoShot(e,shv,fast);
  if(first&&first.elev!=null&&t&&Math.abs(t.elev-first.elev)>6){out.pills.push(`<span class="warn">${esc(L('pill_tilt'))}</span>`);out.bad.push(['Same tilt',L('tilt_same',{a:Math.round(first.elev),b:Math.round(t.elev)})])}
  return out}
 async function shot(blob,t,vid){flash.classList.add('on');setTimeout(()=>flash.classList.remove('on'),60);g.buzz([20,40,20]);
@@ -580,7 +603,7 @@ function perPhoto(r,items,r0){const N=A.D.names,top=r.label,rows=[];
  const anchor=g.out.querySelector('.card.result')||g.out.firstElementChild;if(anchor)anchor.insertAdjacentHTML('afterend',html)}
 
 A.f35Of=f35Of;   // also used by single photos (src/guide.py): the shrunk upload has no EXIF
-A.pano={show(on){want=on;if(ready)apply()},init(){g=A._g;D=A.D;P=D.pano;esc=A.esc;lang=g.store.get('lang','en');S.kind=g.store.get('pkind','turn');
+A.pano={show(on){want=on;if(ready)apply()},init(){g=A._g;D=A.D;P=D.pano;esc=A.esc;lang=g.store.get('lang','en');S.kind=g.store.get('pkind','turn');S.auto=!!g.store.get('pauto',false);
   build();ready=true;apply();
   // ui.js treats any truthy return as handled: return false synchronously outside set mode (a Promise is truthy)
   A.onPicks=(f,c)=>g.mode()==='pano'?onPicks(f,c):false},
