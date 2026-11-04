@@ -112,6 +112,14 @@ write token). The free Space has 2 CPU cores and 16 GB RAM and serves over https
 guide works. Timing on this laptop with CUDA off and 2 threads (3 train photos; the Space CPU may differ): startup
 27-46 s, landslide type 6-19 s per photo, one size estimate ~8 min. So the Space runs with `--no-dims` (no sizes)
 and `--no-save` (photos are not kept). For sizes, run the app on a GPU laptop. Accuracy is the same model as above.
+Note (Nov 2026): Hugging Face now requires a PRO subscription for Docker Spaces, so the free route is the one below.
+
+## Public link from this laptop (free, with sizes)
+`python tools/serve_public.py` starts the app on 127.0.0.1 and opens a Cloudflare quick tunnel; it prints
+`https://<random words>.trycloudflare.com`, which works on any phone (https, so the live camera guide works) while
+the window stays open. `cloudflared.exe` is a general tool and lives outside the project in `E:\cloudflared\`
+(or set `CLOUDFLARED`); the tunnel uses HTTP/2 because this network blocks QUIC. Options: `--save` keeps uploads,
+`--no-dims` drops sizes. Checked through the public link: page 2.4 s, full result with sizes 40 s (one train photo).
 
 ## User guidance in the app
 
