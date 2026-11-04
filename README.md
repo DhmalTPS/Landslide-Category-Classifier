@@ -105,6 +105,14 @@ for this course project, but credit every photo you show ("Title" by Author, Lic
 publish modified versions of ND photos, and remove NC photos before any commercial use.
 See `results/licences.md`.
 
+## Online demo (Hugging Face Space, free)
+`tools/build_hf_space.py --push USER/landslide-classifier` stages `deploy/hf_space/` (Dockerfile, Space header),
+`src/` and the trained heads from `models/`, then uploads them as a Docker Space (needs `hf auth login` once with a
+write token). The free Space has 2 CPU cores and 16 GB RAM and serves over https, so the phone's live camera
+guide works. Timing on this laptop with CUDA off and 2 threads (3 train photos; the Space CPU may differ): startup
+27-46 s, landslide type 6-19 s per photo, one size estimate ~8 min. So the Space runs with `--no-dims` (no sizes)
+and `--no-save` (photos are not kept). For sizes, run the app on a GPU laptop. Accuracy is the same model as above.
+
 ## User guidance in the app
 
 `src/guide.py` adds:
